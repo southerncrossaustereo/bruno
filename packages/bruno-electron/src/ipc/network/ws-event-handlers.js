@@ -3,6 +3,7 @@ const { WsClient } = require('@usebruno/requests');
 const { safeParseJSON, safeStringifyJSON } = require('../../utils/common');
 const { cloneDeep, each, get } = require('lodash');
 const interpolateVars = require('./interpolate-vars');
+const { resolveExternalSecrets } = require('@usebruno/secret-providers');
 const { preferencesUtil } = require('../../store/preferences');
 const { getCertsAndProxyConfig } = require('./cert-utils');
 const {
@@ -154,6 +155,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
 
     switch (grantType) {
       case 'authorization_code':
+        await resolveExternalSecrets(requestCopy, { brunoConfig, mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         ({
           credentials,
@@ -185,6 +187,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
         }
         break;
       case 'client_credentials':
+        await resolveExternalSecrets(requestCopy, { brunoConfig, mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         ({
           credentials,
@@ -216,6 +219,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
         }
         break;
       case 'password':
+        await resolveExternalSecrets(requestCopy, { brunoConfig, mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         ({
           credentials,
@@ -277,6 +281,13 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
 
   delete wsRequest.apiKeyAuthValueForQueryParams;
 
+  {
+    const { errors: secretErrors } = await resolveExternalSecrets(wsRequest, { brunoConfig, mode: 'desktop' });
+    if (secretErrors && secretErrors.length) {
+      const summary = secretErrors.map((e) => `${e.raw}: ${e.message}`).join('; ');
+      throw new Error(`Failed to resolve Azure Key Vault references: ${summary}`);
+    }
+  }
   interpolateVars(wsRequest, envVars, runtimeVariables, processEnvVars);
 
   return wsRequest;

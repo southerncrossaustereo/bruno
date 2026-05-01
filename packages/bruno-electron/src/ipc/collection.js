@@ -65,6 +65,8 @@ const EnvironmentSecretsStore = require('../store/env-secrets');
 const CollectionSecurityStore = require('../store/collection-security');
 const UiStateSnapshotStore = require('../store/ui-state-snapshot');
 const interpolateVars = require('./network/interpolate-vars');
+const { resolveExternalSecrets } = require('@usebruno/secret-providers');
+const { getBrunoConfig: getBrunoConfigForSecrets } = require('../store/bruno-config');
 const { interpolateString } = require('./network/interpolate-string');
 const { getEnvVars, getTreePathFromCollectionToItem, mergeVars, parseBruFileMeta, hydrateRequestWithUuid, transformRequestToSaveToFilesystem } = require('../utils/collection');
 const { getProcessEnvVars } = require('../store/process-env');
@@ -1651,6 +1653,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
         mergeVars(collection, requestCopy, requestTreePath);
         const globalEnvironmentVariables = collection.globalEnvironmentVariables;
         const promptVariables = collection.promptVariables;
+        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfigForSecrets(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         const { oauth2: { grantType, accessTokenUrl, refreshTokenUrl }, collectionVariables, folderVariables, requestVariables } = requestCopy || {};
 
@@ -1717,6 +1720,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
 
         switch (grantType) {
           case 'authorization_code':
+            await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfigForSecrets(collectionUid, collection), mode: 'desktop' });
             interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
             return await getOAuth2TokenUsingAuthorizationCode({
               request: requestCopy,
@@ -1727,6 +1731,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
             }).then(handleOAuth2Response);
 
           case 'client_credentials':
+            await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfigForSecrets(collectionUid, collection), mode: 'desktop' });
             interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
             return await getOAuth2TokenUsingClientCredentials({
               request: requestCopy,
@@ -1737,6 +1742,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
             }).then(handleOAuth2Response);
 
           case 'password':
+            await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfigForSecrets(collectionUid, collection), mode: 'desktop' });
             interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
             return await getOAuth2TokenUsingPasswordCredentials({
               request: requestCopy,
@@ -1747,6 +1753,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
             }).then(handleOAuth2Response);
 
           case 'implicit':
+            await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfigForSecrets(collectionUid, collection), mode: 'desktop' });
             interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
             return await getOAuth2TokenUsingImplicitGrant({
               request: requestCopy,
@@ -1780,6 +1787,7 @@ const registerRendererEventHandlers = (mainWindow, watcher) => {
         const partialItem = { uid: itemUid };
         const requestTreePath = getTreePathFromCollectionToItem(collection, partialItem);
         mergeVars(collection, requestCopy, requestTreePath);
+        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfigForSecrets(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         const globalEnvironmentVariables = collection.globalEnvironmentVariables;
 

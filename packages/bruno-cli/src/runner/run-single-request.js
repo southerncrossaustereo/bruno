@@ -5,6 +5,7 @@ const fs = require('fs');
 const { forOwn, each, extend, get, compact } = require('lodash');
 const prepareRequest = require('./prepare-request');
 const interpolateVars = require('./interpolate-vars');
+const { resolveExternalSecrets } = require('@usebruno/secret-providers');
 const { interpolateString, interpolateObject } = require('./interpolate-string');
 const { ScriptRuntime, TestRuntime, VarsRuntime, AssertRuntime, formatErrorWithContext, SCRIPT_TYPES } = require('@usebruno/js');
 const { stripExtension } = require('../utils/filesystem');
@@ -327,6 +328,14 @@ const runSingleRequest = async function (
       }
     }
 
+    // resolve any {{azkv://...}} references before interpolation
+    {
+      const { errors: secretErrors } = await resolveExternalSecrets(request, { brunoConfig, mode: 'cli' });
+      if (secretErrors && secretErrors.length) {
+        const summary = secretErrors.map((e) => `${e.raw}: ${e.message}`).join('; ');
+        throw new Error(`Failed to resolve Azure Key Vault references: ${summary}`);
+      }
+    }
     // interpolate variables inside request
     interpolateVars(request, envVariables, runtimeVariables, processEnvVars);
 
