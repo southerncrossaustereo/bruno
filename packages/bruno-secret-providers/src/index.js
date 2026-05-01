@@ -1,6 +1,7 @@
 const { findReferences, replaceReferences } = require('./reference');
 const { walkStrings } = require('./walk');
 const AzureKeyVaultProvider = require('./providers/azure-keyvault');
+const { ERROR_CODES, FRIENDLY_MESSAGES, classifyError } = require('./error-classifier');
 
 // One provider instance per resolved (mode, tenantId, clientId, vaultBaseUrlTemplate) tuple.
 const providerPool = new Map();
@@ -82,15 +83,50 @@ const resolveExternalSecrets = async (target, options = {}) => {
   return { resolved: resolvedByRaw.size, errors };
 };
 
+// Tests a single {{azkv://...}} reference end-to-end: parses it, runs the
+// auth chain (which may prompt the user the first time), fetches the
+// secret, and DISCARDS the value. Returns a stable shape the UI can switch
+// on without ever seeing the resolved value:
+//
+//   { ok: true }
+//   { ok: false, errorCode, message }
+//
+// Successful test calls populate the resolver cache, so the next real
+// request that uses the same reference is a cache hit.
+const testReference = async (referenceText, options = {}) => {
+  const cfg = readAzureKeyVaultConfig(options.brunoConfig, options.mode);
+  const text = typeof referenceText === 'string' ? referenceText : '';
+  const refs = findReferences(text, { vaultBaseUrlTemplate: cfg.vaultBaseUrlTemplate });
+  if (refs.length === 0) {
+    return {
+      ok: false,
+      errorCode: ERROR_CODES.INVALID_REFERENCE,
+      message: FRIENDLY_MESSAGES.INVALID_REFERENCE
+    };
+  }
+  const ref = refs[0];
+  const provider = options.provider || getAzureKeyVaultProvider(cfg);
+  try {
+    await provider.resolve(ref);
+    return { ok: true };
+  } catch (err) {
+    return classifyError(err);
+  }
+};
+
 const clearProviderPool = () => {
   providerPool.clear();
 };
 
 module.exports = {
   resolveExternalSecrets,
+  testReference,
   readAzureKeyVaultConfig,
   getAzureKeyVaultProvider,
   clearProviderPool,
+  ERROR_CODES,
+  FRIENDLY_MESSAGES,
+  classifyError,
   // re-exports for unit tests / advanced callers
   AzureKeyVaultProvider,
   findReferences,
