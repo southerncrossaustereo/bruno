@@ -1,0 +1,21 @@
+{
+  "name": "@usebruno/secret-providers",
+  "version": "0.1.0",
+  "license": "MIT",
+  "main": "src/index.js",
+  "files": [
+    "src",
+    "package.json"
+  ],
+  "scripts": {
+    "test": "jest"
+  },
+  "dependencies": {
+    "@azure/identity": "^4.5.0",
+    "@azure/keyvault-secrets": "^4.9.0",
+    "lodash": "^4.17.21"
+  },
+  "devDependencies": {
+    "jest": "^29.2.0"
+  }
+}

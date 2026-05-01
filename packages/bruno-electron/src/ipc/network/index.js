@@ -30,6 +30,7 @@ const { getOAuth2TokenUsingAuthorizationCode, getOAuth2TokenUsingClientCredentia
 const { preferencesUtil } = require('../../store/preferences');
 const { getProcessEnvVars } = require('../../store/process-env');
 const { getBrunoConfig } = require('../../store/bruno-config');
+const { resolveExternalSecrets } = require('@usebruno/secret-providers');
 const Oauth2Store = require('../../store/oauth2');
 const { isRequestTagsIncluded } = require('@usebruno/common');
 const { cookiesStore } = require('../../store/cookies');
@@ -228,6 +229,7 @@ const configureRequest = async (
     let credentials, credentialsId, oauth2Url, debugInfo;
     switch (grantType) {
       case 'authorization_code':
+        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingAuthorizationCode({ request: requestCopy, collectionUid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -245,6 +247,7 @@ const configureRequest = async (
         }
         break;
       case 'implicit':
+        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingImplicitGrant({ request: requestCopy, collectionUid }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -262,6 +265,7 @@ const configureRequest = async (
         }
         break;
       case 'client_credentials':
+        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingClientCredentials({ request: requestCopy, collectionUid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -279,6 +283,7 @@ const configureRequest = async (
         }
         break;
       case 'password':
+        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingPasswordCredentials({ request: requestCopy, collectionUid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -577,6 +582,17 @@ const registerNetworkIpc = (mainWindow) => {
       mainWindow.webContents.send('main:cookies-update', safeParseJSON(safeStringifyJSON(domainsWithCookies)));
     }
 
+    // resolve any {{azkv://...}} references before interpolation
+    {
+      const { errors: secretErrors } = await resolveExternalSecrets(request, {
+        brunoConfig: getBrunoConfig(collectionUid, collection),
+        mode: 'desktop'
+      });
+      if (secretErrors && secretErrors.length) {
+        const summary = secretErrors.map((e) => `${e.raw}: ${e.message}`).join('; ');
+        throw new Error(`Failed to resolve Azure Key Vault references: ${summary}`);
+      }
+    }
     // interpolate variables inside request
     interpolateVars(request, envVars, runtimeVariables, processEnvVars, promptVariables);
 
