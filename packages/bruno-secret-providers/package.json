@@ -11,8 +11,8 @@
     "test": "jest"
   },
   "dependencies": {
-    "@azure/identity": "^4.5.0",
-    "@azure/keyvault-secrets": "^4.9.0",
+    "@azure/identity": "^4.13.1",
+    "@azure/keyvault-secrets": "^4.11.1",
     "lodash": "^4.17.21"
   },
   "devDependencies": {
