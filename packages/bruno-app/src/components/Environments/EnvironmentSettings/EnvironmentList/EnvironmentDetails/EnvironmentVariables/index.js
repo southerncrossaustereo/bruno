@@ -6,6 +6,7 @@ import { saveEnvironment } from 'providers/ReduxStore/slices/collections/actions
 import { setEnvironmentsDraft, clearEnvironmentsDraft } from 'providers/ReduxStore/slices/collections';
 import { flattenItems, isItemARequest } from 'utils/collections';
 import SensitiveFieldWarning from 'components/SensitiveFieldWarning';
+import AzureKeyVaultChip from 'components/AzureKeyVaultChip';
 import EnvironmentVariablesTable from 'components/EnvironmentVariablesTable';
 import { sensitiveFields } from './constants';
 
@@ -88,6 +89,9 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
 
   const renderExtraValueContent = useCallback(
     (variable) => {
+      if (AzureKeyVaultChip.AZKV_REGEX.test(variable?.value || '')) {
+        return <AzureKeyVaultChip variable={variable} collection={collection} />;
+      }
       if (!variable.secret && hasSensitiveUsage(variable.name)) {
         return (
           <SensitiveFieldWarning
@@ -98,7 +102,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
       }
       return null;
     },
-    [hasSensitiveUsage]
+    [hasSensitiveUsage, collection]
   );
 
   return (
