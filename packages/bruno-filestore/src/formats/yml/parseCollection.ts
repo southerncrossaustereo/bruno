@@ -65,6 +65,12 @@ const parseCollection = (ymlString: string): ParsedCollection => {
       }));
     }
 
+    // secretProviders (Bruno-specific) — pass through verbatim. Mirror of
+    // the stringifier: lets opencollection.yml round-trip secretProviders.
+    if (brunoExtensions?.secretProviders && typeof brunoExtensions.secretProviders === 'object') {
+      brunoConfig.secretProviders = brunoExtensions.secretProviders;
+    }
+
     // protobuf
     if (oc.config?.protobuf) {
       brunoConfig.protobuf = {

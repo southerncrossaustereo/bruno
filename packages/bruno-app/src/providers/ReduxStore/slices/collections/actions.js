@@ -2448,11 +2448,18 @@ export const saveCollectionSettings = (collectionUid, brunoConfig = null, silent
 
     const savePromises = [];
 
+    // Use the draft brunoConfig (if any) for BOTH writes. In bru format
+    // these target different files so the choice doesn't matter; but in
+    // yml format both calls write opencollection.yml, and the first call
+    // previously used the live brunoConfig — meaning a brunoConfig edit
+    // could be silently overwritten when the two parallel writes raced.
+    const brunoConfigToSave = brunoConfig || (collectionCopy.draft && collectionCopy.draft.brunoConfig);
+    const effectiveBrunoConfig = brunoConfigToSave || collectionCopy.brunoConfig;
+
     // Save collection.bru file
-    savePromises.push(ipcRenderer.invoke('renderer:save-collection-root', collectionCopy.pathname, collectionRootToSave, collectionCopy.brunoConfig));
+    savePromises.push(ipcRenderer.invoke('renderer:save-collection-root', collectionCopy.pathname, collectionRootToSave, effectiveBrunoConfig));
 
     // Save bruno.json if brunoConfig is provided or if there's a brunoConfig draft
-    const brunoConfigToSave = brunoConfig || (collectionCopy.draft && collectionCopy.draft.brunoConfig);
     if (brunoConfigToSave) {
       savePromises.push(ipcRenderer.invoke('renderer:update-bruno-config', brunoConfigToSave, collectionCopy.pathname, collectionCopy.root));
     }
