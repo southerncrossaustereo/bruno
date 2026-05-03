@@ -11,6 +11,7 @@ import Script from './Script';
 import Test from './Tests';
 import Presets from './Presets';
 import Protobuf from './Protobuf';
+import SecretStores from './SecretStores';
 import StyledWrapper from './StyledWrapper';
 import Vars from './Vars/index';
 import StatusDot from 'components/StatusDot';
@@ -94,6 +95,9 @@ const CollectionSettings = ({ collection }) => {
       case 'protobuf': {
         return <Protobuf collection={collection} />;
       }
+      case 'secretStores': {
+        return <SecretStores collection={collection} />;
+      }
     }
   };
 
@@ -144,6 +148,15 @@ const CollectionSettings = ({ collection }) => {
         <div className={getTabClassname('protobuf')} role="tab" data-testid="collection-settings-tab-protobuf" onClick={() => setTab('protobuf')}>
           Protobuf
           {protobufConfig.protoFiles && protobufConfig.protoFiles.length > 0 && <StatusDot />}
+        </div>
+        <div className={getTabClassname('secretStores')} role="tab" data-testid="collection-settings-tab-secretStores" onClick={() => setTab('secretStores')}>
+          Secret Stores
+          {(() => {
+            const stores = collection.draft?.brunoConfig
+              ? get(collection, 'draft.brunoConfig.secretProviders.azureKeyVault.stores', [])
+              : get(collection, 'brunoConfig.secretProviders.azureKeyVault.stores', []);
+            return stores && stores.length > 0 ? <StatusDot /> : null;
+          })()}
         </div>
       </div>
       <section className="collection-settings-content mt-4 h-full overflow-auto">{getTabPanel(tab)}</section>
