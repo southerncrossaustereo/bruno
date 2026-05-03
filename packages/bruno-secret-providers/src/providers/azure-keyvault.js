@@ -52,6 +52,64 @@ class AzureKeyVaultProvider {
     });
   }
 
+  // Lists secret *names* (not values) in a vault. Paginated — caller can
+  // iterate. Returns { secrets: [{name, enabled, contentType, expiresOn,
+  // updatedOn}], hasMore }.
+  //
+  // We deliberately don't support a server-side search filter because Key
+  // Vault's REST API doesn't have one — clients filter client-side. We
+  // page through up to `limit` enabled secrets and let the UI search
+  // within that.
+  async listSecrets({ vaultUrl, limit = 200 } = {}) {
+    if (!vaultUrl) throw new Error('vaultUrl is required');
+    const client = getClient(vaultUrl, this.config);
+    const secrets = [];
+    let count = 0;
+    for await (const props of client.listPropertiesOfSecrets()) {
+      if (count >= limit) {
+        return { secrets, hasMore: true };
+      }
+      secrets.push({
+        name: props.name,
+        enabled: props.enabled !== false,
+        contentType: props.contentType || null,
+        expiresOn: props.expiresOn ? props.expiresOn.toISOString() : null,
+        updatedOn: props.updatedOn ? props.updatedOn.toISOString() : null
+      });
+      count++;
+    }
+    return { secrets, hasMore: false };
+  }
+
+  // Lists all versions of a single secret. Returns the version IDs (the
+  // last path segment of the version URL) plus enabled/created/expires.
+  async listVersions({ vaultUrl, secretName } = {}) {
+    if (!vaultUrl || !secretName) throw new Error('vaultUrl and secretName are required');
+    const client = getClient(vaultUrl, this.config);
+    const versions = [];
+    for await (const props of client.listPropertiesOfSecretVersions(secretName)) {
+      versions.push({
+        version: props.version,
+        enabled: props.enabled !== false,
+        createdOn: props.createdOn ? props.createdOn.toISOString() : null,
+        expiresOn: props.expiresOn ? props.expiresOn.toISOString() : null
+      });
+    }
+    // Newest first — listPropertiesOfSecretVersions order isn't guaranteed.
+    versions.sort((a, b) => (b.createdOn || '').localeCompare(a.createdOn || ''));
+    return versions;
+  }
+
+  // Verifies the auth chain works AND we have list-secrets permission on
+  // the vault. We attempt to read one secret name — that's the cheapest
+  // 200 we can ask for. Empty vaults still return a successful page.
+  async testStore({ vaultUrl } = {}) {
+    if (!vaultUrl) throw new Error('vaultUrl is required');
+    const client = getClient(vaultUrl, this.config);
+    const iter = client.listPropertiesOfSecrets();
+    // Pull only the first page so we don't enumerate a 10k-secret vault.
+    await iter.next();
+  }
 }
 
 module.exports = AzureKeyVaultProvider;

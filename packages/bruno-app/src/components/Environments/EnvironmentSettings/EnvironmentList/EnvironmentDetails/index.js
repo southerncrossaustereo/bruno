@@ -1,11 +1,14 @@
-import { IconCopy, IconEdit, IconTrash, IconCheck, IconX, IconSearch } from '@tabler/icons';
+import { IconCopy, IconEdit, IconTrash, IconCheck, IconX, IconSearch, IconKey } from '@tabler/icons';
 import { useState, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { renameEnvironment, updateEnvironmentColor } from 'providers/ReduxStore/slices/collections/actions';
+import { setEnvironmentsDraft } from 'providers/ReduxStore/slices/collections';
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
+import { uuid } from 'utils/common';
 import CopyEnvironment from 'components/Environments/EnvironmentSettings/CopyEnvironment';
 import DeleteEnvironment from 'components/Environments/EnvironmentSettings/DeleteEnvironment';
+import AzureKeyVaultPicker from 'components/AzureKeyVaultPicker';
 import EnvironmentVariables from './EnvironmentVariables';
 import ColorPicker from 'components/ColorPicker';
 import StyledWrapper from './StyledWrapper';
@@ -16,10 +19,44 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
 
   const [openDeleteModal, setOpenDeleteModal] = useState(false);
   const [openCopyModal, setOpenCopyModal] = useState(false);
+  const [openKvPicker, setOpenKvPicker] = useState(false);
   const [isRenaming, setIsRenaming] = useState(false);
   const [newName, setNewName] = useState('');
   const [nameError, setNameError] = useState('');
   const inputRef = useRef(null);
+
+  const handleKvPick = ({ reference, secretName }) => {
+    // Append the new variable as a draft. User still has to click Save.
+    const existing = collection.environmentsDraft?.environmentUid === environment.uid
+      ? collection.environmentsDraft.variables
+      : environment.variables || [];
+    // Pick a unique name. If the secret name collides, suffix it.
+    let varName = secretName.replace(/[^a-zA-Z0-9_]/g, '_');
+    let suffix = 1;
+    while (existing.some((v) => v.name === varName)) {
+      suffix += 1;
+      varName = `${secretName.replace(/[^a-zA-Z0-9_]/g, '_')}_${suffix}`;
+    }
+    const next = [
+      ...existing,
+      {
+        uid: uuid(),
+        name: varName,
+        value: reference,
+        type: 'text',
+        secret: true,
+        enabled: true
+      }
+    ];
+    dispatch(setEnvironmentsDraft({
+      collectionUid: collection.uid,
+      environmentUid: environment.uid,
+      variables: next
+    }));
+    setIsModified(true);
+    setOpenKvPicker(false);
+    toast.success(`Added "${varName}" — click Save to persist`);
+  };
 
   const validateEnvironmentName = (name) => {
     if (!name || name.trim() === '') {
@@ -225,6 +262,9 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
           <button onClick={() => setOpenCopyModal(true)} title="Copy">
             <IconCopy size={15} strokeWidth={1.5} />
           </button>
+          <button onClick={() => setOpenKvPicker(true)} title="Pick from Azure Key Vault">
+            <IconKey size={15} strokeWidth={1.5} />
+          </button>
           <button onClick={() => setOpenDeleteModal(true)} title="Delete">
             <IconTrash size={15} strokeWidth={1.5} />
           </button>
@@ -239,6 +279,14 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
           searchQuery={debouncedSearchQuery}
         />
       </div>
+
+      {openKvPicker && (
+        <AzureKeyVaultPicker
+          collection={collection}
+          onPick={handleKvPick}
+          onCancel={() => setOpenKvPicker(false)}
+        />
+      )}
     </StyledWrapper>
   );
 };
