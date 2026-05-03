@@ -1,4 +1,4 @@
-const { findReferences, replaceReferences } = require('./reference');
+const { findReferences, replaceReferences, buildVaultUrl } = require('./reference');
 const { walkStrings } = require('./walk');
 const AzureKeyVaultProvider = require('./providers/azure-keyvault');
 const { ERROR_CODES, FRIENDLY_MESSAGES, classifyError } = require('./error-classifier');
@@ -114,6 +114,73 @@ const testReference = async (referenceText, options = {}) => {
   }
 };
 
+// Resolves a "store" — accepts either a stored definition object
+// ({ vault, tenantId? }) from bruno.json's secretProviders.azureKeyVault.stores
+// array, OR just a vault short-name / full host. Returns the absolute vault
+// URL plus a config object scoped to that store's auth overrides (if any).
+const resolveStore = (storeOrVault, options = {}) => {
+  const baseCfg = readAzureKeyVaultConfig(options.brunoConfig, options.mode);
+  let vault;
+  let storeOverrides = {};
+  if (typeof storeOrVault === 'string') {
+    vault = storeOrVault;
+  } else if (storeOrVault && typeof storeOrVault === 'object') {
+    vault = storeOrVault.vault;
+    if (storeOrVault.tenantId) storeOverrides.tenantId = storeOrVault.tenantId;
+    if (storeOrVault.clientId) storeOverrides.clientId = storeOrVault.clientId;
+  }
+  if (!vault) {
+    return { error: { ok: false, errorCode: ERROR_CODES.CONFIG, message: 'No vault specified.' } };
+  }
+  const cfg = { ...baseCfg, ...storeOverrides };
+  return { vault, vaultUrl: buildVaultUrl(vault, cfg.vaultBaseUrlTemplate), cfg };
+};
+
+// Tests a store: does the auth chain succeed AND do we have list-secrets
+// permission? Returns the same {ok, errorCode, message} shape as
+// testReference.
+const testVaultAccess = async (storeOrVault, options = {}) => {
+  const resolved = resolveStore(storeOrVault, options);
+  if (resolved.error) return resolved.error;
+  const { vaultUrl, cfg } = resolved;
+  const provider = options.provider || getAzureKeyVaultProvider(cfg);
+  try {
+    await provider.testStore({ vaultUrl });
+    return { ok: true };
+  } catch (err) {
+    return classifyError(err);
+  }
+};
+
+// Lists secret names in a vault. Returns
+// { ok, secrets: [{name, enabled, contentType, expiresOn, updatedOn}], hasMore }
+// on success, or { ok: false, errorCode, message } on auth/network/etc failure.
+const listSecretsInVault = async (storeOrVault, options = {}) => {
+  const resolved = resolveStore(storeOrVault, options);
+  if (resolved.error) return resolved.error;
+  const { vaultUrl, cfg } = resolved;
+  const provider = options.provider || getAzureKeyVaultProvider(cfg);
+  try {
+    const result = await provider.listSecrets({ vaultUrl, limit: options.limit });
+    return { ok: true, ...result };
+  } catch (err) {
+    return classifyError(err);
+  }
+};
+
+const listSecretVersions = async (storeOrVault, secretName, options = {}) => {
+  const resolved = resolveStore(storeOrVault, options);
+  if (resolved.error) return resolved.error;
+  const { vaultUrl, cfg } = resolved;
+  const provider = options.provider || getAzureKeyVaultProvider(cfg);
+  try {
+    const versions = await provider.listVersions({ vaultUrl, secretName });
+    return { ok: true, versions };
+  } catch (err) {
+    return classifyError(err);
+  }
+};
+
 const clearProviderPool = () => {
   providerPool.clear();
 };
@@ -121,8 +188,12 @@ const clearProviderPool = () => {
 module.exports = {
   resolveExternalSecrets,
   testReference,
+  testVaultAccess,
+  listSecretsInVault,
+  listSecretVersions,
   readAzureKeyVaultConfig,
   getAzureKeyVaultProvider,
+  resolveStore,
   clearProviderPool,
   ERROR_CODES,
   FRIENDLY_MESSAGES,
@@ -130,5 +201,6 @@ module.exports = {
   // re-exports for unit tests / advanced callers
   AzureKeyVaultProvider,
   findReferences,
-  replaceReferences
+  replaceReferences,
+  buildVaultUrl
 };
