@@ -29,6 +29,38 @@ jobs:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
+      # Stamp each build with a unique semver. For manual runs we append a
+      # prerelease suffix derived from github.run_number (monotonic per
+      # workflow), so installer filenames don't collide in users' Downloads.
+      # For v* tag pushes we trust the tag — strip the leading `v`.
+      - name: Compute build version
+        id: ver
+        shell: bash
+        run: |
+          BASE=$(node -p "require('./packages/bruno-electron/package.json').version")
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${BASE}-sca.${{ github.run_number }}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Build version"
+            echo ""
+            echo "\`$VERSION\`  (commit \`${GITHUB_SHA::7}\`)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # electron-builder reads the version from packages/bruno-electron/package.json,
+      # and the artifactName template (`${name}_${version}_${arch}_win.${ext}`)
+      # bakes that version into the installer filename. So we just bump it in
+      # place — no git commit, no upstream churn.
+      - name: Apply build version
+        shell: bash
+        run: |
+          cd packages/bruno-electron
+          npm version "${{ steps.ver.outputs.version }}" --no-git-tag-version --allow-same-version
+
       # `setup` does: npm install + build every subordinate workspace package
       # + bundle the JS sandbox libraries. It does NOT build bruno-app, which
       # is the React frontend — that's a separate step before electron pack.
@@ -47,7 +79,7 @@ jobs:
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
-          name: bruno-windows-installer-${{ github.sha }}
+          name: bruno-windows-installer-${{ steps.ver.outputs.version }}
           path: |
             packages/bruno-electron/out/*.exe
             packages/bruno-electron/out/*.exe.blockmap
