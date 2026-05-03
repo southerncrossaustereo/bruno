@@ -277,6 +277,18 @@ const stringifyCollection = (collectionRoot: any, brunoConfig: any): string => {
       }));
     }
 
+    // secretProviders (Bruno-specific) — pass through verbatim. The YAML
+    // serializer handles arbitrary JSON-shaped data, so we don't need to
+    // mirror the schema field-by-field. Without this, opencollection.yml
+    // would silently drop secretProviders on every save because the
+    // top-level oc.config schema doesn't include it.
+    if (brunoConfig.secretProviders && typeof brunoConfig.secretProviders === 'object') {
+      if (!oc.extensions.bruno) {
+        oc.extensions.bruno = {};
+      }
+      (oc.extensions.bruno as any).secretProviders = brunoConfig.secretProviders;
+    }
+
     return stringifyYml(oc);
   } catch (error) {
     console.error('Error stringifying opencollection.yml:', error);
