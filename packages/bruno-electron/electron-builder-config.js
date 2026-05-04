@@ -97,7 +97,13 @@ const config = {
     target: [
       {
         target: 'nsis',
-        arch: ['x64', 'arm64']
+        // Comma-separated env override — set BRUNO_BUILD_ARCH=x64 in CI to
+        // skip arm64. Defaults to both for local builds where the cost is
+        // already paid and someone might genuinely want arm64.
+        arch: (process.env.BRUNO_BUILD_ARCH || 'x64,arm64')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
       }
     ],
     sign: null,
