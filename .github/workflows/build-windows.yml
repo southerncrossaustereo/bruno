@@ -21,6 +21,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 45
 
+    # x64 only — SCA doesn't ship Windows arm64. Halves build time and
+    # roughly halves artifact size. Read in electron-builder-config.js.
+    env:
+      BRUNO_BUILD_ARCH: x64
+
     steps:
       - uses: actions/checkout@v4
 
@@ -72,11 +77,12 @@ jobs:
 
       # build:electron copies the web build into packages/bruno-electron/web
       # and then runs `npm run dist:<host-os>` — on windows-latest that's
-      # `dist:win`, producing an NSIS installer for x64 + arm64.
+      # `dist:win`. With BRUNO_BUILD_ARCH=x64 set above, only x64 is built.
       - name: Build Electron installer
         run: npm run build:electron
 
       - name: Upload installer artifact
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: bruno-windows-installer-${{ steps.ver.outputs.version }}
@@ -85,3 +91,36 @@ jobs:
             packages/bruno-electron/out/*.exe.blockmap
           retention-days: 30
           if-no-files-found: error
+
+      # Keep storage tidy — only the latest Windows installer is useful, and
+      # GitHub bills artifact storage by GB-month. After a successful upload,
+      # delete every prior bruno-windows-installer-* artifact in the repo.
+      # Failures here don't fail the build.
+      - name: Delete prior Windows installer artifacts
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keep = `bruno-windows-installer-${{ steps.ver.outputs.version }}`;
+            const { data } = await github.rest.actions.listArtifactsForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              per_page: 100
+            });
+            let deleted = 0;
+            for (const a of data.artifacts) {
+              if (a.name.startsWith('bruno-windows-installer-') && a.name !== keep) {
+                try {
+                  await github.rest.actions.deleteArtifact({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    artifact_id: a.id
+                  });
+                  core.info(`Deleted ${a.name} (${a.id})`);
+                  deleted++;
+                } catch (err) {
+                  core.warning(`Could not delete ${a.name}: ${err.message}`);
+                }
+              }
+            }
+            core.summary.addHeading('Artifact cleanup', 3).addRaw(`Kept \`${keep}\`, deleted ${deleted} prior installer artifact(s).`).write();
