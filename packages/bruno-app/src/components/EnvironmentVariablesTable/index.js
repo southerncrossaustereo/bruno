@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import React, { useCallback, useRef, useState, useEffect, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { TableVirtuoso } from 'react-virtuoso';
 import cloneDeep from 'lodash/cloneDeep';
 import { IconTrash, IconAlertCircle, IconInfoCircle } from '@tabler/icons';
@@ -33,7 +33,7 @@ const TableRow = React.memo(
   }
 );
 
-const EnvironmentVariablesTable = ({
+const EnvironmentVariablesTable = forwardRef(({
   environment,
   collection,
   onSave,
@@ -43,7 +43,7 @@ const EnvironmentVariablesTable = ({
   setIsModified,
   renderExtraValueContent,
   searchQuery = ''
-}) => {
+}, ref) => {
   const { storedTheme } = useTheme();
   const { globalEnvironments, activeGlobalEnvironmentUid } = useSelector((state) => state.globalEnvironments);
   const activeWorkspace = useSelector((state) => {
@@ -245,6 +245,31 @@ const EnvironmentVariablesTable = ({
   useEffect(() => {
     setPinnedData({ query: '', uids: new Set() });
   }, [savedValuesJson]);
+
+  // Imperative API for callers that want to inject a variable from outside
+  // the table (e.g. the Azure Key Vault picker in the env-editor header).
+  // Goes through Formik so the table's existing draft-sync useEffects pick
+  // up the change — dispatching directly to Redux would race with Formik's
+  // own sync timer and the insertion would be silently undone.
+  useImperativeHandle(ref, () => ({
+    appendVariable: (variable) => {
+      const current = formik.values || [];
+      // Keep the trailing empty row at the end. If for some reason there
+      // isn't one, we'll add one back.
+      const last = current[current.length - 1];
+      const isLastEmpty = last && (!last.name || last.name.trim() === '');
+      const head = isLastEmpty ? current.slice(0, -1) : current;
+      const emptyRow = isLastEmpty ? last : {
+        uid: uuid(),
+        name: '',
+        value: '',
+        type: 'text',
+        secret: false,
+        enabled: true
+      };
+      formik.setValues([...head, variable, emptyRow]);
+    }
+  }), [formik]);
 
   // Sync modified state
   useEffect(() => {
@@ -639,6 +664,8 @@ const EnvironmentVariablesTable = ({
       </div>
     </StyledWrapper>
   );
-};
+});
+
+EnvironmentVariablesTable.displayName = 'EnvironmentVariablesTable';
 
 export default EnvironmentVariablesTable;

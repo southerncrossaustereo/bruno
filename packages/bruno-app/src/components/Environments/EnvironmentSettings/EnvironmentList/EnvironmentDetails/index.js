@@ -2,7 +2,6 @@ import { IconCopy, IconEdit, IconTrash, IconCheck, IconX, IconSearch, IconKey } 
 import { useState, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { renameEnvironment, updateEnvironmentColor } from 'providers/ReduxStore/slices/collections/actions';
-import { setEnvironmentsDraft } from 'providers/ReduxStore/slices/collections';
 import { validateName, validateNameError } from 'utils/common/regex';
 import toast from 'react-hot-toast';
 import { uuid } from 'utils/common';
@@ -24,36 +23,37 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
   const [newName, setNewName] = useState('');
   const [nameError, setNameError] = useState('');
   const inputRef = useRef(null);
+  // Imperative handle into EnvironmentVariablesTable. The picker injects
+  // through this so the new variable lands in the table's Formik state
+  // directly — dispatching to Redux from outside races with the table's
+  // own 300ms Formik→Redux sync and the insert gets undone.
+  const tableRef = useRef(null);
 
   const handleKvPick = ({ reference, secretName }) => {
-    // Append the new variable as a draft. User still has to click Save.
+    if (!tableRef.current?.appendVariable) {
+      toast.error('Could not insert variable — table not ready');
+      return;
+    }
+    // Existing names come from whichever source the table is currently
+    // showing: the unsaved draft if there is one, else the saved env.
     const existing = collection.environmentsDraft?.environmentUid === environment.uid
-      ? collection.environmentsDraft.variables
-      : environment.variables || [];
-    // Pick a unique name. If the secret name collides, suffix it.
-    let varName = secretName.replace(/[^a-zA-Z0-9_]/g, '_');
+      ? (collection.environmentsDraft.variables || [])
+      : (environment.variables || []);
+    const sanitized = secretName.replace(/[^a-zA-Z0-9_]/g, '_');
+    let varName = sanitized;
     let suffix = 1;
     while (existing.some((v) => v.name === varName)) {
       suffix += 1;
-      varName = `${secretName.replace(/[^a-zA-Z0-9_]/g, '_')}_${suffix}`;
+      varName = `${sanitized}_${suffix}`;
     }
-    const next = [
-      ...existing,
-      {
-        uid: uuid(),
-        name: varName,
-        value: reference,
-        type: 'text',
-        secret: true,
-        enabled: true
-      }
-    ];
-    dispatch(setEnvironmentsDraft({
-      collectionUid: collection.uid,
-      environmentUid: environment.uid,
-      variables: next
-    }));
-    setIsModified(true);
+    tableRef.current.appendVariable({
+      uid: uuid(),
+      name: varName,
+      value: reference,
+      type: 'text',
+      secret: true,
+      enabled: true
+    });
     setOpenKvPicker(false);
     toast.success(`Added "${varName}" — click Save to persist`);
   };
@@ -277,6 +277,7 @@ const EnvironmentDetails = ({ environment, setIsModified, collection, searchQuer
           setIsModified={setIsModified}
           collection={collection}
           searchQuery={debouncedSearchQuery}
+          tableRef={tableRef}
         />
       </div>
 

@@ -10,7 +10,7 @@ import AzureKeyVaultChip from 'components/AzureKeyVaultChip';
 import EnvironmentVariablesTable from 'components/EnvironmentVariablesTable';
 import { sensitiveFields } from './constants';
 
-const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '' }) => {
+const EnvironmentVariables = ({ environment, setIsModified, collection, searchQuery = '', tableRef }) => {
   const dispatch = useDispatch();
 
   const environmentsDraft = collection?.environmentsDraft;
@@ -107,6 +107,7 @@ const EnvironmentVariables = ({ environment, setIsModified, collection, searchQu
 
   return (
     <EnvironmentVariablesTable
+      ref={tableRef}
       key={environment?.uid}
       environment={environment}
       collection={collection}
