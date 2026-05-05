@@ -33,26 +33,36 @@ const readAzureKeyVaultConfig = (brunoConfig, mode) => {
 // fetches them in parallel (deduped + cached), then mutates the target in
 // place to substitute resolved values.
 //
+// `target` may be a single object or an array of objects — useful for
+// resolving across both the request and its variable maps (env vars,
+// runtime vars, etc.) in one pass so references stored inside an env
+// var's value get substituted before downstream interpolation expands
+// `{{varName}}` into the literal `{{azkv://...}}` token.
+//
 // Returns { resolved: <count>, errors: [{ raw, message }] }.
 //
 // On any per-reference error, the original {{...}} token is left in place so
 // the existing variable interpolator can still report a missing-variable
 // warning rather than silently sending an empty string.
 const resolveExternalSecrets = async (target, options = {}) => {
-  if (!target || typeof target !== 'object') {
+  const rawTargets = Array.isArray(target) ? target : [target];
+  const targets = rawTargets.filter((t) => t && typeof t === 'object');
+  if (targets.length === 0) {
     return { resolved: 0, errors: [] };
   }
 
   const cfg = readAzureKeyVaultConfig(options.brunoConfig, options.mode);
 
-  // Gather unique references across all string leaves.
+  // Gather unique references across all string leaves of every target.
   const refsByRaw = new Map();
-  walkStrings(target, (str) => {
-    if (str.indexOf('azkv://') === -1) return;
-    for (const ref of findReferences(str, { vaultBaseUrlTemplate: cfg.vaultBaseUrlTemplate })) {
-      if (!refsByRaw.has(ref.raw)) refsByRaw.set(ref.raw, ref);
-    }
-  });
+  for (const t of targets) {
+    walkStrings(t, (str) => {
+      if (str.indexOf('azkv://') === -1) return;
+      for (const ref of findReferences(str, { vaultBaseUrlTemplate: cfg.vaultBaseUrlTemplate })) {
+        if (!refsByRaw.has(ref.raw)) refsByRaw.set(ref.raw, ref);
+      }
+    });
+  }
 
   if (refsByRaw.size === 0) {
     return { resolved: 0, errors: [] };
@@ -73,11 +83,13 @@ const resolveExternalSecrets = async (target, options = {}) => {
   }));
 
   if (resolvedByRaw.size > 0) {
-    walkStrings(target, (str, set) => {
-      if (str.indexOf('azkv://') === -1) return;
-      const next = replaceReferences(str, resolvedByRaw);
-      if (next !== str) set(next);
-    });
+    for (const t of targets) {
+      walkStrings(t, (str, set) => {
+        if (str.indexOf('azkv://') === -1) return;
+        const next = replaceReferences(str, resolvedByRaw);
+        if (next !== str) set(next);
+      });
+    }
   }
 
   return { resolved: resolvedByRaw.size, errors };

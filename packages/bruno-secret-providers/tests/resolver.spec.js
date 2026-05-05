@@ -89,4 +89,40 @@ describe('resolveExternalSecrets', () => {
     expect(target.url).toBe('V');
     expect(provider.calls).toEqual(['https://kv.vault.azure.net|x|latest']);
   });
+
+  test('accepts an array of targets and substitutes across all of them', async () => {
+    // Mirrors the real call: a request that references {{myVar}} plus an
+    // env-var map whose value is the {{azkv://...}} reference. Resolving
+    // both in one pass means subsequent variable interpolation expands
+    // {{myVar}} to the resolved secret rather than the literal token.
+    const request = { body: 'token={{myVar}}' };
+    const envVars = { myVar: '{{azkv://kv/api-token}}', plain: 'untouched' };
+    const provider = fakeProvider({ 'https://kv.vault.azure.net|api-token|latest': 'TOKEN' });
+    const out = await resolveExternalSecrets([request, envVars], { provider });
+    expect(out.errors).toEqual([]);
+    expect(out.resolved).toBe(1);
+    expect(envVars.myVar).toBe('TOKEN');
+    expect(envVars.plain).toBe('untouched');
+    expect(request.body).toBe('token={{myVar}}'); // request body has no azkv ref — left as-is
+  });
+
+  test('dedupes references seen across multiple targets', async () => {
+    const request = { url: 'https://example/{{azkv://kv/api-token}}' };
+    const envVars = { myVar: '{{azkv://kv/api-token}}' };
+    const provider = fakeProvider({ 'https://kv.vault.azure.net|api-token|latest': 'TOKEN' });
+    const out = await resolveExternalSecrets([request, envVars], { provider });
+    expect(out.errors).toEqual([]);
+    expect(out.resolved).toBe(1);
+    expect(provider.calls).toEqual(['https://kv.vault.azure.net|api-token|latest']);
+    expect(request.url).toBe('https://example/TOKEN');
+    expect(envVars.myVar).toBe('TOKEN');
+  });
+
+  test('skips invalid entries in a target array', async () => {
+    const request = { url: '{{azkv://kv/x}}' };
+    const provider = fakeProvider({ 'https://kv.vault.azure.net|x|latest': 'V' });
+    const out = await resolveExternalSecrets([request, null, undefined, 'not-an-object'], { provider });
+    expect(out.errors).toEqual([]);
+    expect(request.url).toBe('V');
+  });
 });

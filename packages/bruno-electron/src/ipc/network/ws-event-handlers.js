@@ -155,7 +155,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
 
     switch (grantType) {
       case 'authorization_code':
-        await resolveExternalSecrets(requestCopy, { brunoConfig, mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig, mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         ({
           credentials,
@@ -187,7 +187,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
         }
         break;
       case 'client_credentials':
-        await resolveExternalSecrets(requestCopy, { brunoConfig, mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig, mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         ({
           credentials,
@@ -219,7 +219,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
         }
         break;
       case 'password':
-        await resolveExternalSecrets(requestCopy, { brunoConfig, mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig, mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars);
         ({
           credentials,
@@ -282,7 +282,7 @@ const prepareWsRequest = async (item, collection, environment, runtimeVariables,
   delete wsRequest.apiKeyAuthValueForQueryParams;
 
   {
-    const { errors: secretErrors } = await resolveExternalSecrets(wsRequest, { brunoConfig, mode: 'desktop' });
+    const { errors: secretErrors } = await resolveExternalSecrets([wsRequest, envVars], { brunoConfig, mode: 'desktop' });
     if (secretErrors && secretErrors.length) {
       const summary = secretErrors.map((e) => `${e.raw}: ${e.message}`).join('; ');
       throw new Error(`Failed to resolve Azure Key Vault references: ${summary}`);
