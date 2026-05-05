@@ -229,7 +229,7 @@ const configureRequest = async (
     let credentials, credentialsId, oauth2Url, debugInfo;
     switch (grantType) {
       case 'authorization_code':
-        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingAuthorizationCode({ request: requestCopy, collectionUid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -247,7 +247,7 @@ const configureRequest = async (
         }
         break;
       case 'implicit':
-        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingImplicitGrant({ request: requestCopy, collectionUid }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -265,7 +265,7 @@ const configureRequest = async (
         }
         break;
       case 'client_credentials':
-        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingClientCredentials({ request: requestCopy, collectionUid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -283,7 +283,7 @@ const configureRequest = async (
         }
         break;
       case 'password':
-        await resolveExternalSecrets(requestCopy, { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
+        await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: getBrunoConfig(collectionUid, collection), mode: 'desktop' });
         interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
         ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingPasswordCredentials({ request: requestCopy, collectionUid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
         request.oauth2Credentials = { credentials, url: oauth2Url, collectionUid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -582,9 +582,12 @@ const registerNetworkIpc = (mainWindow) => {
       mainWindow.webContents.send('main:cookies-update', safeParseJSON(safeStringifyJSON(domainsWithCookies)));
     }
 
-    // resolve any {{azkv://...}} references before interpolation
+    // resolve any {{azkv://...}} references before interpolation, including
+    // references that live inside env-var values (the picker writes them
+    // there) so that `{{myVar}}` → resolved secret rather than a literal
+    // `{{azkv://...}}` placeholder.
     {
-      const { errors: secretErrors } = await resolveExternalSecrets(request, {
+      const { errors: secretErrors } = await resolveExternalSecrets([request, envVars], {
         brunoConfig: getBrunoConfig(collectionUid, collection),
         mode: 'desktop'
       });

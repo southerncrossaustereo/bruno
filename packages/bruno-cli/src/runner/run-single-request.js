@@ -328,9 +328,11 @@ const runSingleRequest = async function (
       }
     }
 
-    // resolve any {{azkv://...}} references before interpolation
+    // resolve any {{azkv://...}} references before interpolation, including
+    // references stored inside env-var values so `{{myVar}}` resolves to
+    // the secret rather than the literal `{{azkv://...}}` placeholder.
     {
-      const { errors: secretErrors } = await resolveExternalSecrets(request, { brunoConfig, mode: 'cli' });
+      const { errors: secretErrors } = await resolveExternalSecrets([request, envVariables], { brunoConfig, mode: 'cli' });
       if (secretErrors && secretErrors.length) {
         const summary = secretErrors.map((e) => `${e.raw}: ${e.message}`).join('; ');
         throw new Error(`Failed to resolve Azure Key Vault references: ${summary}`);

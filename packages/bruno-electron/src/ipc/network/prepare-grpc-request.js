@@ -93,21 +93,21 @@ const configureRequest = async (grpcRequest, request, collection, envVars, runti
     try {
       switch (grantType) {
         case 'authorization_code':
-          await resolveExternalSecrets(requestCopy, { brunoConfig: collection?.brunoConfig, mode: 'desktop' });
+          await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: collection?.brunoConfig, mode: 'desktop' });
           interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
           ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingAuthorizationCode({ request: requestCopy, collectionUid: collection.uid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
           grpcRequest.oauth2Credentials = { credentials, url: oauth2Url, collectionUid: collection.uid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
           placeOAuth2Token(grpcRequest, credentials, tokenPlacement, tokenHeaderPrefix, tokenQueryKey);
           break;
         case 'client_credentials':
-          await resolveExternalSecrets(requestCopy, { brunoConfig: collection?.brunoConfig, mode: 'desktop' });
+          await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: collection?.brunoConfig, mode: 'desktop' });
           interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
           ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingClientCredentials({ request: requestCopy, collectionUid: collection.uid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
           grpcRequest.oauth2Credentials = { credentials, url: oauth2Url, collectionUid: collection.uid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
           placeOAuth2Token(grpcRequest, credentials, tokenPlacement, tokenHeaderPrefix, tokenQueryKey);
           break;
         case 'password':
-          await resolveExternalSecrets(requestCopy, { brunoConfig: collection?.brunoConfig, mode: 'desktop' });
+          await resolveExternalSecrets([requestCopy, envVars], { brunoConfig: collection?.brunoConfig, mode: 'desktop' });
           interpolateVars(requestCopy, envVars, runtimeVariables, processEnvVars, promptVariables);
           ({ credentials, url: oauth2Url, credentialsId, debugInfo } = await getOAuth2TokenUsingPasswordCredentials({ request: requestCopy, collectionUid: collection.uid, certsAndProxyConfigForTokenUrl, certsAndProxyConfigForRefreshUrl }));
           grpcRequest.oauth2Credentials = { credentials, url: oauth2Url, collectionUid: collection.uid, credentialsId, debugInfo, folderUid: request.oauth2Credentials?.folderUid };
@@ -174,7 +174,7 @@ const prepareGrpcRequest = async (item, collection, environment, runtimeVariable
   grpcRequest = setAuthHeaders(grpcRequest, request, collectionRoot);
 
   {
-    const { errors: secretErrors } = await resolveExternalSecrets(grpcRequest, {
+    const { errors: secretErrors } = await resolveExternalSecrets([grpcRequest, envVars], {
       brunoConfig: collection?.draft?.brunoConfig || collection?.brunoConfig,
       mode: 'desktop'
     });
