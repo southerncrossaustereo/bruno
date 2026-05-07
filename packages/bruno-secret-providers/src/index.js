@@ -173,7 +173,12 @@ const listSecretsInVault = async (storeOrVault, options = {}) => {
   const { vaultUrl, cfg } = resolved;
   const provider = options.provider || getAzureKeyVaultProvider(cfg);
   try {
-    const result = await provider.listSecrets({ vaultUrl, limit: options.limit });
+    const result = await provider.listSecrets({
+      vaultUrl,
+      limit: options.limit,
+      search: options.search,
+      scanLimit: options.scanLimit
+    });
     return { ok: true, ...result };
   } catch (err) {
     return classifyError(err);

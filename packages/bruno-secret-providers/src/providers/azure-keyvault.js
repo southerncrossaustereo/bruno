@@ -52,23 +52,30 @@ class AzureKeyVaultProvider {
     });
   }
 
-  // Lists secret *names* (not values) in a vault. Paginated — caller can
-  // iterate. Returns { secrets: [{name, enabled, contentType, expiresOn,
-  // updatedOn}], hasMore }.
+  // Lists secret *names* (not values) in a vault. Returns
+  // { secrets: [{name, enabled, contentType, expiresOn, updatedOn}], hasMore }.
   //
-  // We deliberately don't support a server-side search filter because Key
-  // Vault's REST API doesn't have one — clients filter client-side. We
-  // page through up to `limit` enabled secrets and let the UI search
-  // within that.
-  async listSecrets({ vaultUrl, limit = 200 } = {}) {
+  // Key Vault's REST API has no server-side name filter, so when the caller
+  // supplies `search` we iterate pages here and keep matches (case-insensitive
+  // substring on the secret name). Two stop conditions, both surfaced via
+  // hasMore:
+  //   - we've collected `limit` matches (default 200)
+  //   - we've scanned `scanLimit` names without exhausting the vault
+  //     (default 5000 when searching, Infinity otherwise — without a query
+  //     we just return the first `limit` names like before)
+  async listSecrets({ vaultUrl, limit = 200, search, scanLimit } = {}) {
     if (!vaultUrl) throw new Error('vaultUrl is required');
     const client = getClient(vaultUrl, this.config);
+    const q = typeof search === 'string' ? search.trim().toLowerCase() : '';
+    const effectiveScanLimit = scanLimit ?? (q ? 5000 : limit);
     const secrets = [];
-    let count = 0;
+    let scanned = 0;
     for await (const props of client.listPropertiesOfSecrets()) {
-      if (count >= limit) {
+      if (scanned >= effectiveScanLimit) {
         return { secrets, hasMore: true };
       }
+      scanned++;
+      if (q && !props.name.toLowerCase().includes(q)) continue;
       secrets.push({
         name: props.name,
         enabled: props.enabled !== false,
@@ -76,7 +83,9 @@ class AzureKeyVaultProvider {
         expiresOn: props.expiresOn ? props.expiresOn.toISOString() : null,
         updatedOn: props.updatedOn ? props.updatedOn.toISOString() : null
       });
-      count++;
+      if (secrets.length >= limit) {
+        return { secrets, hasMore: true };
+      }
     }
     return { secrets, hasMore: false };
   }

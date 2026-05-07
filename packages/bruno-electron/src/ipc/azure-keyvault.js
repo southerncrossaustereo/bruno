@@ -64,11 +64,11 @@ const registerAzureKeyVaultIpc = () => {
   });
 
   ipcMain.handle('renderer:list-keyvault-secrets', async (_event, payload = {}) => {
-    const { storeIdOrVault, store, limit, collectionUid, collection } = payload;
+    const { storeIdOrVault, store, limit, search, scanLimit, collectionUid, collection } = payload;
     const brunoConfig = getBrunoConfig(collectionUid, collection);
     const resolved = store || resolveStoreFromConfig(brunoConfig, storeIdOrVault);
     if (!resolved) return { ok: false, errorCode: 'CONFIG', message: 'Store not configured.' };
-    return await listSecretsInVault(resolved, { brunoConfig, mode: 'desktop', limit });
+    return await listSecretsInVault(resolved, { brunoConfig, mode: 'desktop', limit, search, scanLimit });
   });
 
   ipcMain.handle('renderer:list-keyvault-secret-versions', async (_event, payload = {}) => {

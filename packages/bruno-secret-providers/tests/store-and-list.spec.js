@@ -1,9 +1,11 @@
 const { testVaultAccess, listSecretsInVault, listSecretVersions, ERROR_CODES } = require('../src');
 
 const fakeProvider = ({ secrets = [], versions = [], hasMore = false, error = null } = {}) => ({
+  lastListArgs: null,
   async testStore() { if (error) throw error; },
-  async listSecrets() {
+  async listSecrets(args) {
     if (error) throw error;
+    this.lastListArgs = args;
     return { secrets, hasMore };
   },
   async listVersions() {
@@ -52,6 +54,71 @@ describe('listSecretsInVault', () => {
     const result = await listSecretsInVault('contoso-dev', { provider });
     expect(result.errorCode).toBe(ERROR_CODES.AUTH_FAILED);
     expect(result.ok).toBe(false);
+  });
+
+  test('passes search and scanLimit through to the provider', async () => {
+    const provider = fakeProvider({ secrets: [{ name: 'api-token', enabled: true }] });
+    await listSecretsInVault('contoso-dev', { provider, search: 'api', scanLimit: 1000, limit: 50 });
+    expect(provider.lastListArgs).toMatchObject({ search: 'api', scanLimit: 1000, limit: 50 });
+  });
+});
+
+describe('AzureKeyVaultProvider.listSecrets search', () => {
+  const { AzureKeyVaultProvider } = require('../src');
+
+  // Stub the @azure SecretClient via the provider's internal client pool.
+  const installFakeClient = (provider, names) => {
+    const fakeClient = {
+      async *listPropertiesOfSecrets() {
+        for (const name of names) {
+          yield { name, enabled: true, contentType: null, expiresOn: null, updatedOn: null };
+        }
+      }
+    };
+    const { clientPool } = AzureKeyVaultProvider.__internal;
+    clientPool.clear();
+    // Intercept the next getClient call by pre-seeding the pool with the
+    // exact key the provider will compute.
+    const credKey = `desktop|${provider.config.tenantId || ''}|${provider.config.clientId || ''}|${JSON.stringify(provider.config.auth || {})}`;
+    clientPool.set(`https://contoso.vault.azure.net|${credKey}`, fakeClient);
+  };
+
+  test('without search, returns first `limit` names with hasMore', async () => {
+    const provider = new AzureKeyVaultProvider({});
+    installFakeClient(provider, Array.from({ length: 5 }, (_, i) => `s${i}`));
+    const result = await provider.listSecrets({ vaultUrl: 'https://contoso.vault.azure.net', limit: 3 });
+    expect(result.secrets.map((s) => s.name)).toEqual(['s0', 's1', 's2']);
+    expect(result.hasMore).toBe(true);
+  });
+
+  test('with search, scans past first page and returns matches anywhere in the vault', async () => {
+    const provider = new AzureKeyVaultProvider({});
+    const names = [];
+    for (let i = 0; i < 250; i++) names.push(`alpha-${i}`);
+    names.push('beta-target');
+    for (let i = 0; i < 50; i++) names.push(`gamma-${i}`);
+    installFakeClient(provider, names);
+
+    const result = await provider.listSecrets({
+      vaultUrl: 'https://contoso.vault.azure.net',
+      search: 'beta'
+    });
+    expect(result.secrets.map((s) => s.name)).toEqual(['beta-target']);
+    expect(result.hasMore).toBe(false);
+  });
+
+  test('with search, caps at scanLimit and reports hasMore when vault is huge', async () => {
+    const provider = new AzureKeyVaultProvider({});
+    const names = Array.from({ length: 100 }, (_, i) => `s${i}`);
+    installFakeClient(provider, names);
+
+    const result = await provider.listSecrets({
+      vaultUrl: 'https://contoso.vault.azure.net',
+      search: 'x-no-match',
+      scanLimit: 10
+    });
+    expect(result.secrets).toEqual([]);
+    expect(result.hasMore).toBe(true);
   });
 });
 

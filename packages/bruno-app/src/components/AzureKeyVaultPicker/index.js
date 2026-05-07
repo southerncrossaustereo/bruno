@@ -22,6 +22,7 @@ const AzureKeyVaultPicker = ({ collection, onPick, onCancel }) => {
 
   const [selectedStoreId, setSelectedStoreId] = useState(stores[0]?.id || '');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [secrets, setSecrets] = useState([]);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -30,19 +31,26 @@ const AzureKeyVaultPicker = ({ collection, onPick, onCancel }) => {
 
   const selectedStore = stores.find((s) => s.id === selectedStoreId) || null;
 
-  // Load secrets whenever the chosen store changes.
+  // Debounce the search box so each keystroke doesn't kick off a fresh
+  // vault scan — Key Vault has no server-side name filter, so a search
+  // re-fetch iterates pages until it finds matches.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reload when the store changes or the debounced query changes.
   useEffect(() => {
     if (!selectedStore) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setSecrets([]);
-    setHasMore(false);
     setSelectedSecret(null);
 
     window.ipcRenderer
       .invoke('renderer:list-keyvault-secrets', {
         store: selectedStore,
+        search: debouncedSearch,
         collectionUid: collection.uid,
         collection
       })
@@ -62,13 +70,18 @@ const AzureKeyVaultPicker = ({ collection, onPick, onCancel }) => {
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [selectedStoreId, collection]);
+  }, [selectedStoreId, debouncedSearch, collection]);
 
+  // Re-filter locally for instant feedback while a debounced re-fetch is
+  // pending — the server may have returned a wider set than what the user
+  // has now typed.
   const filteredSecrets = useMemo(() => {
     if (!search.trim()) return secrets;
     const q = search.trim().toLowerCase();
     return secrets.filter((s) => s.name.toLowerCase().includes(q));
   }, [search, secrets]);
+
+  const isSearching = debouncedSearch.trim().length > 0;
 
   const referencePreview = useMemo(() => {
     if (!selectedStore || !selectedSecret) return null;
@@ -196,7 +209,9 @@ const AzureKeyVaultPicker = ({ collection, onPick, onCancel }) => {
             })}
             {hasMore && (
               <div className="picker-status">
-                Showing first 200 secrets — narrow the search to find more.
+                {isSearching
+                  ? 'Showing first 200 matches — keep typing to narrow further.'
+                  : 'Showing first 200 secrets — start typing to search the rest of the vault.'}
               </div>
             )}
           </div>
