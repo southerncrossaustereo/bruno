@@ -28,25 +28,36 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need tags so the version step below can derive the base from the
+          # latest v* tag rather than the stale 2.0.0 in package.json.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version-file: '.nvmrc'
           cache: 'npm'
 
-      # Stamp each build with a unique semver. For manual runs we append a
-      # prerelease suffix derived from github.run_number (monotonic per
-      # workflow), so installer filenames don't collide in users' Downloads.
-      # For v* tag pushes we trust the tag — strip the leading `v`.
+      # Stamp each build with a unique semver. For v* tag pushes we trust the
+      # tag — strip the leading `v`. For manual runs we walk back to the
+      # latest v* tag, strip the leading `v` and any trailing `-SCA`, then
+      # suffix with `-sca.<run_number>` so installer filenames don't collide
+      # in users' Downloads and still sort by run order. We deliberately do
+      # NOT read packages/bruno-electron/package.json's version — it's pinned
+      # at 2.0.0 upstream and never bumped on this fork, so basing off it
+      # produced misleading 2.0.0-sca.* installers.
       - name: Compute build version
         id: ver
         shell: bash
         run: |
-          BASE=$(node -p "require('./packages/bruno-electron/package.json').version")
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${{ github.ref_name }}"
             VERSION="${VERSION#v}"
           else
+            TAG=$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)
+            TAG="${TAG#v}"
+            TAG="${TAG%-[Ss][Cc][Aa]}"
+            BASE="${TAG:-$(node -p "require('./packages/bruno-electron/package.json').version")}"
             VERSION="${BASE}-sca.${{ github.run_number }}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
