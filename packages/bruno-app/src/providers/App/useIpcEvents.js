@@ -25,7 +25,7 @@ import {
   streamDataReceived,
   setDotEnvVariables
 } from 'providers/ReduxStore/slices/collections';
-import { collectionAddEnvFileEvent, openCollectionEvent, hydrateCollectionWithUiStateSnapshot, mergeAndPersistEnvironment } from 'providers/ReduxStore/slices/collections/actions';
+import { collectionAddEnvFileEvent, openCollectionEvent, hydrateCollectionWithUiStateSnapshot, mergeAndPersistEnvironment, discoverUnimportedCollections } from 'providers/ReduxStore/slices/collections/actions';
 import {
   workspaceOpenedEvent,
   workspaceConfigUpdatedEvent
@@ -294,7 +294,16 @@ const useIpcEvents = () => {
 
     const removePreferencesUpdatesListener = ipcRenderer.on('main:load-preferences', (val) => {
       dispatch(updatePreferences(val));
+      // Once preferences land we know the defaultLocation is set — kick off
+      // a one-shot discovery scan. Subsequent rescans happen on window focus
+      // (handled below, throttled inside the thunk).
+      dispatch(discoverUnimportedCollections({ force: true }));
     });
+
+    const onWindowFocus = () => {
+      dispatch(discoverUnimportedCollections());
+    };
+    window.addEventListener('focus', onWindowFocus);
 
     const removeCookieUpdateListener = ipcRenderer.on('main:cookies-update', (val) => {
       dispatch(updateCookies(val));
@@ -360,6 +369,7 @@ const useIpcEvents = () => {
       removeConfigUpdatesListener();
       removeShowPreferencesListener();
       removePreferencesUpdatesListener();
+      window.removeEventListener('focus', onWindowFocus);
       removeCookieUpdateListener();
       removeGlobalEnvironmentsUpdatesListener();
       removeSnapshotHydrationListener();

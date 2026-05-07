@@ -474,30 +474,48 @@ const isCollectionRootBruFile = (pathname, collectionPath) => {
   return path.normalize(dirname) === path.normalize(collectionPath) && basename === 'collection.bru';
 };
 
-const scanForBrunoFiles = async (dir) => {
+// Recursively walks `dir` and returns the path of every directory that looks
+// like a Bruno collection root (contains either `bruno.json` or
+// `opencollection.yml`). Skips noisy/large folders, caps recursion depth and
+// the number of results so an unrelated parent folder can't blow up the scan
+// — this is run at startup against the user's defaultLocation, which may be a
+// general "Documents" subfolder containing arbitrary content.
+const SCAN_SKIP_DIRS = new Set(['node_modules', '.git', '.svn', '.hg', '.idea', '.vscode']);
+const COLLECTION_MARKERS = ['bruno.json', 'opencollection.yml'];
+
+const scanForBrunoFiles = async (dir, options = {}) => {
+  const maxDepth = options.maxDepth ?? 8;
+  const maxResults = options.maxResults ?? 500;
   const brunoFolders = [];
 
-  const scanDir = (currentDir) => {
-    const files = fs.readdirSync(currentDir);
+  const scanDir = async (currentDir, depth) => {
+    if (brunoFolders.length >= maxResults) return;
+    let entries;
+    try {
+      entries = await fs.promises.readdir(currentDir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
 
-    if (files && files.length) {
-      files.forEach((file) => {
-        const fullPath = path.join(currentDir, file);
-        const stat = fs.statSync(fullPath);
+    // A directory containing a collection marker is itself a collection root —
+    // record it and stop descending so nested request folders aren't reported.
+    const marker = entries.find((e) => e.isFile() && COLLECTION_MARKERS.includes(e.name));
+    if (marker) {
+      brunoFolders.push(currentDir);
+      return;
+    }
 
-        if (stat.isDirectory()) {
-          if (['node_modules', '.git'].includes(file)) {
-            return;
-          }
-          scanDir(fullPath);
-        } else if (file === 'bruno.json') {
-          brunoFolders.push(currentDir);
-        }
-      });
+    if (depth >= maxDepth) return;
+
+    for (const entry of entries) {
+      if (brunoFolders.length >= maxResults) return;
+      if (!entry.isDirectory()) continue;
+      if (SCAN_SKIP_DIRS.has(entry.name)) continue;
+      await scanDir(path.join(currentDir, entry.name), depth + 1);
     }
   };
 
-  scanDir(dir);
+  await scanDir(dir, 0);
   return brunoFolders;
 };
 

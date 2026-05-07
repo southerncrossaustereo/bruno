@@ -11,6 +11,7 @@ import path, { normalizePath } from 'utils/common/path';
 import { insertTaskIntoQueue, toggleSidebarCollapse } from 'providers/ReduxStore/slices/app';
 import toast from 'react-hot-toast';
 import IpcErrorModal from 'components/Errors/IpcErrorModal/index';
+import DiscoveredCollectionsToast from 'components/DiscoveredCollectionsToast';
 import {
   findCollectionByUid,
   findEnvironmentInCollection,
@@ -3153,6 +3154,71 @@ export const scanForBrunoFiles = (dir) => (dispatch, getState) => {
         reject();
       });
   });
+};
+
+// Module-level state so the discovery thunk can throttle itself across
+// rapid focus events and not stack toasts when a previous one is still up.
+let lastDiscoverAt = 0;
+let activeDiscoveryToastId = null;
+const DISCOVER_THROTTLE_MS = 30 * 1000;
+
+// Scans the user's defaultLocation for collections that aren't already
+// opened or dismissed and prompts via toast. Triggered on app boot once
+// preferences load, and again on window focus (throttled).
+export const discoverUnimportedCollections = ({ force = false } = {}) => (dispatch) => {
+  const { ipcRenderer } = window;
+  const now = Date.now();
+
+  if (!force && now - lastDiscoverAt < DISCOVER_THROTTLE_MS) return Promise.resolve();
+  if (activeDiscoveryToastId) return Promise.resolve();
+  lastDiscoverAt = now;
+
+  return ipcRenderer
+    .invoke('renderer:discover-unimported-collections')
+    .then((result) => {
+      const collections = (result && result.collections) || [];
+      if (collections.length === 0) return;
+
+      const onOpenAll = () => {
+        dispatch(openMultipleCollections(collections.map((c) => c.pathname))).catch(() => {
+          toast.error('Failed to open one or more collections');
+        });
+      };
+
+      const onDismiss = () => {
+        Promise.all(
+          collections.map((c) => ipcRenderer.invoke('renderer:dismiss-discovered-collection', c.pathname))
+        ).catch(() => { /* best-effort */ });
+      };
+
+      const toastId = toast.custom(
+        (t) => (
+          <DiscoveredCollectionsToast
+            t={t}
+            collections={collections}
+            onOpenAll={onOpenAll}
+            onDismiss={onDismiss}
+          />
+        ),
+        { duration: 30 * 1000 }
+      );
+      activeDiscoveryToastId = toastId;
+
+      // Clear our singleton when the toast goes away (auto-dismiss or user action).
+      const interval = setInterval(() => {
+        const stillActive = document.querySelector(`[data-id="${toastId}"]`);
+        if (!stillActive) {
+          activeDiscoveryToastId = null;
+          clearInterval(interval);
+        }
+      }, 1000);
+      // Hard release after the duration in case the DOM check misses.
+      setTimeout(() => {
+        activeDiscoveryToastId = null;
+        clearInterval(interval);
+      }, 35 * 1000);
+    })
+    .catch(() => { /* swallow — discovery is opportunistic */ });
 };
 
 /**

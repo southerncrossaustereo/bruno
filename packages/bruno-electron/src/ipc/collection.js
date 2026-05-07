@@ -2460,11 +2460,76 @@ const registerMainEventHandlers = (mainWindow, watcher) => {
     app.addRecentDocument(pathname);
   });
 
-  ipcMain.handle('renderer:scan-for-bruno-files', (event, dir) => {
+  ipcMain.handle('renderer:scan-for-bruno-files', async (event, dir) => {
     try {
-      return scanForBrunoFiles(dir);
+      return await scanForBrunoFiles(dir);
     } catch (error) {
       throw new Error(error.message);
+    }
+  });
+
+  // Scans the user's defaultLocation for collections that aren't already in
+  // lastOpenedCollections and haven't been dismissed. Returns
+  // [{ pathname, name }] so the renderer can prompt the user to open them.
+  // The name is best-effort: we read bruno.json/opencollection.yml lazily
+  // and fall back to the directory basename on any parse failure.
+  ipcMain.handle('renderer:discover-unimported-collections', async () => {
+    try {
+      const { getPreferences } = require('../store/preferences');
+      const LastOpenedCollections = require('../store/last-opened-collections');
+      const DismissedDiscoveries = require('../store/dismissed-discoveries');
+
+      const prefs = getPreferences();
+      const defaultLocation = prefs?.general?.defaultLocation;
+      if (!defaultLocation || !fs.existsSync(defaultLocation)) {
+        return { collections: [], scannedLocation: defaultLocation || null };
+      }
+
+      const lastOpened = new LastOpenedCollections().getAll().map((p) => path.resolve(p));
+      const dismissed = new DismissedDiscoveries().getAll();
+      const knownPaths = new Set([...lastOpened, ...dismissed]);
+
+      const found = await scanForBrunoFiles(defaultLocation);
+      const fresh = found
+        .map((p) => path.resolve(p))
+        .filter((p) => !knownPaths.has(p));
+
+      const readCollectionName = (collectionPath) => {
+        try {
+          const ocYml = path.join(collectionPath, 'opencollection.yml');
+          if (fs.existsSync(ocYml)) {
+            const m = fs.readFileSync(ocYml, 'utf8').match(/^name:\s*['"]?(.+?)['"]?\s*$/m);
+            if (m && m[1]) return m[1];
+          }
+          const brunoJson = path.join(collectionPath, 'bruno.json');
+          if (fs.existsSync(brunoJson)) {
+            const cfg = JSON.parse(fs.readFileSync(brunoJson, 'utf8'));
+            if (cfg && typeof cfg.name === 'string' && cfg.name.length) return cfg.name;
+          }
+        } catch (_) { /* fall through to basename */ }
+        return path.basename(collectionPath);
+      };
+
+      const collections = fresh.map((pathname) => ({
+        pathname,
+        name: readCollectionName(pathname)
+      }));
+
+      return { collections, scannedLocation: defaultLocation };
+    } catch (error) {
+      console.error('discover-unimported-collections failed:', error);
+      return { collections: [], scannedLocation: null, error: error.message };
+    }
+  });
+
+  ipcMain.handle('renderer:dismiss-discovered-collection', async (_event, collectionPath) => {
+    try {
+      const DismissedDiscoveries = require('../store/dismissed-discoveries');
+      new DismissedDiscoveries().add(collectionPath);
+      return { ok: true };
+    } catch (error) {
+      console.error('dismiss-discovered-collection failed:', error);
+      return { ok: false, message: error.message };
     }
   });
 
