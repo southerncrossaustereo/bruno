@@ -1,6 +1,6 @@
 import React from 'react';
 import toast from 'react-hot-toast';
-import { IconFolderSearch, IconX } from '@tabler/icons';
+import { IconFolder, IconX } from '@tabler/icons';
 
 // Inline toast body shown when scanForBrunoFiles finds collections in the
 // user's defaultLocation that aren't already opened or dismissed. Rendered
@@ -23,7 +23,7 @@ const DiscoveredCollectionsToast = ({ t, collections, onOpenAll, onDismiss }) =>
       className="flex items-start gap-3 rounded-md border border-gray-200 bg-white p-3 shadow-md dark:border-gray-700 dark:bg-zinc-900"
       style={{ maxWidth: 420 }}
     >
-      <IconFolderSearch size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 opacity-80" />
+      <IconFolder size={20} strokeWidth={1.75} className="mt-0.5 shrink-0 opacity-80" />
       <div className="flex-1 text-sm">
         <div className="font-medium">
           {count === 1 ? 'Found 1 collection in your Bruno folder' : `Found ${count} collections in your Bruno folder`}
