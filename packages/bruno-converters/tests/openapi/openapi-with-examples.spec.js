@@ -53,7 +53,9 @@ describe('OpenAPI with Examples', () => {
     const createUserRequest = brunoCollection.items.find((item) => item.name === 'Create a new user');
     expect(createUserRequest).toBeDefined();
     expect(createUserRequest.examples).toBeDefined();
-    expect(createUserRequest.examples).toHaveLength(4);
+    // 4 response examples + 1 appended "Default" example for the canonical request body
+    expect(createUserRequest.examples).toHaveLength(5);
+    expect(createUserRequest.examples.find((ex) => ex.name === 'Default')).toBeDefined();
 
     // Check response examples
     const createdExample = createUserRequest.examples.find((ex) => ex.name === 'User Created (Valid User)');
@@ -356,7 +358,8 @@ servers:
       const request = brunoCollection.items[0];
 
       expect(request.examples).toBeDefined();
-      expect(request.examples).toHaveLength(2);
+      // 2 response/request-body matched examples + 1 appended Default
+      expect(request.examples).toHaveLength(3);
 
       // Check that matching keys are used
       const validUserExample = request.examples.find((ex) => ex.name === 'User Created');
@@ -436,7 +439,8 @@ servers:
 
       expect(request.examples).toBeDefined();
       // Should have 4 examples: 2 response examples × 2 request body examples
-      expect(request.examples).toHaveLength(4);
+      // + 1 appended Default = 5
+      expect(request.examples).toHaveLength(5);
 
       // Check combinations for 201 response
       const createdWithValid = request.examples.find((ex) => ex.name === 'User Created (Valid User)');
@@ -505,7 +509,8 @@ servers:
       const request = brunoCollection.items[0];
 
       expect(request.examples).toBeDefined();
-      expect(request.examples).toHaveLength(2);
+      // 2 response examples + 1 appended Default
+      expect(request.examples).toHaveLength(3);
 
       // Both examples should have the same request body
       const createdExample = request.examples.find((ex) => ex.name === 'User Created');
@@ -574,7 +579,8 @@ servers:
       const request = brunoCollection.items[0];
 
       expect(request.examples).toBeDefined();
-      expect(request.examples).toHaveLength(2);
+      // 2 response examples + 1 appended Default (also from schema)
+      expect(request.examples).toHaveLength(3);
 
       // Both examples should have request body generated from schema
       const createdExample = request.examples.find((ex) => ex.name === 'User Created');
@@ -632,8 +638,8 @@ servers:
       const request = brunoCollection.items[0];
 
       expect(request.examples).toBeDefined();
-      // Should create combinations: 1 response × 2 request body examples = 2 examples
-      expect(request.examples).toHaveLength(2);
+      // Combinations: 1 response × 2 request body examples = 2, + 1 appended Default
+      expect(request.examples).toHaveLength(3);
 
       const jsonExample = request.examples.find((ex) => ex.name === 'Success (JSON Data)');
       expect(jsonExample).toBeDefined();
@@ -694,8 +700,8 @@ servers:
       const request = brunoCollection.items[0];
 
       expect(request.examples).toBeDefined();
-      // Should have: 1 matched (valid_user) + 2 combinations for unmatched (unmatched × 2 request body examples) = 3
-      expect(request.examples).toHaveLength(3);
+      // 1 matched (valid_user) + 2 combinations for unmatched = 3, + 1 appended Default
+      expect(request.examples).toHaveLength(4);
 
       // Matched example
       const matchedExample = request.examples.find((ex) => ex.name === 'User Created');
@@ -798,7 +804,8 @@ servers:
       const request = brunoCollection.items[0];
 
       expect(request.examples).toBeDefined();
-      expect(request.examples).toHaveLength(3);
+      // 3 response examples + 1 appended Default
+      expect(request.examples).toHaveLength(4);
 
       // All examples should have the same request body
       const requestBodyValue = { name: 'Jane Doe', email: 'jane@example.com' };

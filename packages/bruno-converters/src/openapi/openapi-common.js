@@ -433,8 +433,12 @@ export const populateRequestBody = ({ body, bodySchema, contentType }) => {
 export const createBrunoExample = ({ brunoRequestItem, exampleValue, exampleName, exampleDescription, statusCode, contentType, requestBodySchema = null, requestBodyContentType = null }) => {
   const sanitized = String(exampleName ?? '').replace(/\r?\n/g, ' ').trim();
   const name = sanitized || `${statusCode} Response`;
-  const numericStatus = Number(statusCode);
-  const safeStatus = Number.isFinite(numericStatus) ? numericStatus : null;
+  // Treat null/undefined explicitly — Number(null) is 0, which would falsely
+  // succeed Number.isFinite and give us a `status: 0` example. Callers that
+  // intentionally pass null (e.g. the "Default" import-time example) want a
+  // real null, not zero.
+  const numericStatus = statusCode == null ? null : Number(statusCode);
+  const safeStatus = numericStatus !== null && Number.isFinite(numericStatus) ? numericStatus : null;
   // Deep copy the body to avoid shared references
   const bodyCopy = {
     mode: brunoRequestItem.request.body.mode,

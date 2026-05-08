@@ -3601,7 +3601,8 @@ export const collectionsSlice = createSlice({
     deleteResponseExampleFormUrlEncodedParam: exampleReducers.deleteResponseExampleFormUrlEncodedParam,
     addResponseExampleMultipartFormParam: exampleReducers.addResponseExampleMultipartFormParam,
     updateResponseExampleMultipartFormParam: exampleReducers.updateResponseExampleMultipartFormParam,
-    deleteResponseExampleMultipartFormParam: exampleReducers.deleteResponseExampleMultipartFormParam
+    deleteResponseExampleMultipartFormParam: exampleReducers.deleteResponseExampleMultipartFormParam,
+    loadExampleIntoRequest: exampleReducers.loadExampleIntoRequest
     /* End Response Example Actions */
   }
 });
@@ -3789,6 +3790,7 @@ export const {
   moveResponseExampleRequestHeader,
   setResponseExampleRequestHeaders,
   setResponseExampleParams,
+  loadExampleIntoRequest,
   /* Response Example Actions - End */
   addTransientDirectory,
   addSaveTransientRequestModal,

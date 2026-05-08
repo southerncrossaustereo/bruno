@@ -1,7 +1,7 @@
 import { find, map, filter, cloneDeep, each, concat } from 'lodash';
 import { parseQueryParams, buildQueryString as stringifyQueryParams } from '@usebruno/common/utils';
 import { uuid } from 'utils/common';
-import { findCollectionByUid, findItemInCollection } from 'utils/collections';
+import { findCollectionByUid, findItemInCollection, isItemARequest } from 'utils/collections';
 import { parsePathParams, splitOnFirst, interpolateUrlPathParams } from 'utils/url';
 import statusCodePhraseMap from 'components/ResponsePane/StatusCode/get-status-code-phrase';
 
@@ -1353,4 +1353,40 @@ export const updateResponseExampleStatusText = (state, action) => {
   }
 
   example.response.statusText = String(statusText ?? '');
+};
+
+// Overwrites the working request (item.draft.request) with the chosen
+// example's request fields — url, method, headers, params, body. The
+// item's auth/scripts/vars/assertions/tests/docs are intentionally NOT
+// touched so reusable wiring (auth tokens, post-response var captures)
+// survives a "restore to template" action.
+//
+// New uids are minted for every header/param row so the table editor
+// (which keys on uid) doesn't collide with the example's still-existing
+// rows under the same uid space.
+export const loadExampleIntoRequest = (state, action) => {
+  const { itemUid, collectionUid, exampleUid } = action.payload;
+  const collection = findCollectionByUid(state.collections, collectionUid);
+  if (!collection) return;
+
+  const item = findItemInCollection(collection, itemUid);
+  if (!item || !isItemARequest(item)) return;
+
+  // Prefer draft examples (so unsaved edits to the example apply too),
+  // fall back to committed examples.
+  const sourceExamples = (item.draft && item.draft.examples) || item.examples || [];
+  const example = find(sourceExamples, (e) => e.uid === exampleUid);
+  if (!example || !example.request) return;
+
+  if (!item.draft) {
+    item.draft = cloneDeep(item);
+  }
+
+  const reuid = (rows) => (rows || []).map((row) => ({ ...cloneDeep(row), uid: uuid() }));
+
+  item.draft.request.url = example.request.url ?? '';
+  item.draft.request.method = example.request.method ?? 'GET';
+  item.draft.request.headers = reuid(example.request.headers);
+  item.draft.request.params = reuid(example.request.params);
+  item.draft.request.body = cloneDeep(example.request.body) || { mode: 'none' };
 };

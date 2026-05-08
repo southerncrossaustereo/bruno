@@ -337,6 +337,21 @@ const transformSwaggerRequestItem = (request, usedNames = new Set(), options = {
       }
     });
 
+    // "Default" example — appended after the per-response examples so it
+    // doesn't shift their indices. See openapi-to-bruno.js for rationale.
+    if (requestBodySchema) {
+      examples.push(createBrunoExample({
+        brunoRequestItem,
+        exampleValue: '',
+        exampleName: 'Default',
+        exampleDescription: 'Canonical request body captured from the spec on import.',
+        statusCode: null,
+        contentType: null,
+        requestBodySchema,
+        requestBodyContentType
+      }));
+    }
+
     // Only add examples array if there are examples
     if (examples.length > 0) {
       brunoRequestItem.examples = examples;

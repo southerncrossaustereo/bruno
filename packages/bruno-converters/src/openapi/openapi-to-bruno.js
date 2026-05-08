@@ -659,6 +659,25 @@ const transformOpenapiRequestItem = (request, usedNames = new Set(), options = {
       });
     }
 
+    // "Default" example — appended after the per-response examples so it
+    // doesn't shift their indices but remains discoverable by name. Captures
+    // the canonical request body straight from the spec with no response
+    // payload, so users always have a clean "restore the documented body"
+    // target. Skipped when the operation has no request body.
+    if (requestBodyExamples.length > 0) {
+      const firstRb = requestBodyExamples[0];
+      examples.push(createBrunoExample({
+        brunoRequestItem,
+        exampleValue: '',
+        exampleName: 'Default',
+        exampleDescription: 'Canonical request body captured from the spec on import.',
+        statusCode: null,
+        contentType: null,
+        requestBodySchema: firstRb.schema,
+        requestBodyContentType: firstRb.contentType
+      }));
+    }
+
     // Only add examples array if there are examples
     if (examples.length > 0) {
       brunoRequestItem.examples = examples;

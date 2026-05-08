@@ -1,13 +1,18 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import IconEdit from 'components/Icons/IconEdit';
-import { IconCode, IconDeviceFloppy } from '@tabler/icons';
+import { IconCode, IconDeviceFloppy, IconArrowDown } from '@tabler/icons';
 import StyledWrapper from './StyledWrapper';
 import { useTheme } from 'providers/Theme';
 import TruncatedText from 'components/TruncatedText';
-import { updateResponseExampleName, updateResponseExampleDescription } from 'providers/ReduxStore/slices/collections';
+import {
+  updateResponseExampleName,
+  updateResponseExampleDescription,
+  loadExampleIntoRequest
+} from 'providers/ReduxStore/slices/collections';
 import get from 'lodash/get';
 import Button from 'ui/Button';
+import Modal from 'components/Modal';
 
 const ResponseExampleTopBar = ({
   item,
@@ -93,6 +98,28 @@ const ResponseExampleTopBar = ({
     if (onCancel) {
       onCancel();
     }
+  };
+
+  // "Load into request" — overwrites the working request with this
+  // example's url/method/headers/params/body. Auth/scripts/vars/assertions/
+  // tests/docs are preserved (handled in the reducer). If item.draft exists
+  // we prompt first so accidentally clobbering an in-progress edit is hard.
+  const [showLoadConfirm, setShowLoadConfirm] = useState(false);
+
+  const dispatchLoadIntoRequest = () => {
+    dispatch(loadExampleIntoRequest({
+      itemUid: item.uid,
+      collectionUid: collection.uid,
+      exampleUid
+    }));
+  };
+
+  const handleLoadIntoRequest = () => {
+    if (item?.draft) {
+      setShowLoadConfirm(true);
+      return;
+    }
+    dispatchLoadIntoRequest();
   };
 
   if (!example || !exampleUid) {
@@ -183,6 +210,16 @@ const ResponseExampleTopBar = ({
             <Button
               color="secondary"
               size="sm"
+              icon={<IconArrowDown size={16} color={theme.examples.buttonIconColor} />}
+              onClick={handleLoadIntoRequest}
+              title="Replace the working request with this example's url, method, headers, params and body. Auth, scripts and variables are kept."
+              data-testid="response-example-load-into-request-btn"
+            >
+              Load into Request
+            </Button>
+            <Button
+              color="secondary"
+              size="sm"
               icon={<IconCode size={16} color={theme.examples.buttonIconColor} />}
               onClick={handleGenerateCode}
               title="Generate Code"
@@ -200,6 +237,26 @@ const ResponseExampleTopBar = ({
           </div>
         </div>
       </div>
+      {showLoadConfirm && (
+        <Modal
+          size="sm"
+          title="Overwrite working request?"
+          confirmText="Load and overwrite"
+          cancelText="Cancel"
+          confirmButtonColor="danger"
+          handleCancel={() => setShowLoadConfirm(false)}
+          handleConfirm={() => {
+            dispatchLoadIntoRequest();
+            setShowLoadConfirm(false);
+          }}
+        >
+          <div className="text-sm">
+            This request has unsaved changes. Loading <strong>{example.name}</strong>{' '}
+            will replace the URL, method, headers, params and body with the example's values.
+            Your auth, scripts and variables will be kept.
+          </div>
+        </Modal>
+      )}
     </StyledWrapper>
   );
 };
