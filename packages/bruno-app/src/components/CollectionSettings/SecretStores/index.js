@@ -76,7 +76,10 @@ const SecretStores = ({ collection }) => {
   const commitEdit = () => {
     const isNew = editingId === '__new__';
     const err = validateDraft(editDraft, isNew);
-    if (err) { toast.error(err); return; }
+    if (err) {
+      toast.error(err);
+      return;
+    }
 
     const cleaned = { ...editDraft };
     if (!cleaned.tenantId?.trim()) delete cleaned.tenantId;
@@ -95,7 +98,10 @@ const SecretStores = ({ collection }) => {
   const removeStore = (id) => {
     const nextStores = stores.filter((s) => s.id !== id);
     persist({ stores: nextStores });
-    setTestStatus((prev) => { const { [id]: _, ...rest } = prev; return rest; });
+    setTestStatus((prev) => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
   };
 
   // ── Test connection ───────────────────────────────────────────────────────

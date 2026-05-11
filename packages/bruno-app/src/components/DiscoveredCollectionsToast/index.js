@@ -35,14 +35,20 @@ const DiscoveredCollectionsToast = ({ t, collections, onOpenAll, onDismiss }) =>
           <button
             type="button"
             className="rounded px-2 py-1 text-xs font-medium bg-indigo-600 text-white hover:bg-indigo-700"
-            onClick={() => { onOpenAll(); close(); }}
+            onClick={() => {
+              onOpenAll();
+              close();
+            }}
           >
             {count === 1 ? 'Open' : 'Open all'}
           </button>
           <button
             type="button"
             className="rounded px-2 py-1 text-xs font-medium bg-transparent text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-zinc-800"
-            onClick={() => { onDismiss(); close(); }}
+            onClick={() => {
+              onDismiss();
+              close();
+            }}
           >
             Don’t ask again
           </button>

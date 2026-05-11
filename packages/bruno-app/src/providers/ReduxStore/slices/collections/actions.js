@@ -3200,7 +3200,7 @@ export const discoverUnimportedCollections = ({ force = false } = {}) => (dispat
             onDismiss={onDismiss}
           />
         ),
-        { duration: 30 * 1000 }
+        { duration: 30 * 1000, position: 'bottom-right' }
       );
       activeDiscoveryToastId = toastId;
 
