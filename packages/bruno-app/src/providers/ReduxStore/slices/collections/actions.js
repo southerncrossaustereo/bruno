@@ -3165,7 +3165,7 @@ const DISCOVER_THROTTLE_MS = 30 * 1000;
 // Scans the user's defaultLocation for collections that aren't already
 // opened or dismissed and prompts via toast. Triggered on app boot once
 // preferences load, and again on window focus (throttled).
-export const discoverUnimportedCollections = ({ force = false } = {}) => (dispatch) => {
+export const discoverUnimportedCollections = ({ force = false } = {}) => (dispatch, getState) => {
   const { ipcRenderer } = window;
   const now = Date.now();
 
@@ -3176,7 +3176,16 @@ export const discoverUnimportedCollections = ({ force = false } = {}) => (dispat
   return ipcRenderer
     .invoke('renderer:discover-unimported-collections')
     .then((result) => {
-      const collections = (result && result.collections) || [];
+      const discovered = (result && result.collections) || [];
+      // Belt-and-braces: the main-process filter only consults a legacy
+      // lastOpenedCollections store that's no longer written to. Drop anything
+      // already mounted in the current Redux state before prompting.
+      const openPaths = new Set(
+        (getState().collections.collections || [])
+          .map((c) => normalizePath(c.pathname))
+          .filter(Boolean)
+      );
+      const collections = discovered.filter((c) => !openPaths.has(normalizePath(c.pathname)));
       if (collections.length === 0) return;
 
       const onOpenAll = () => {
