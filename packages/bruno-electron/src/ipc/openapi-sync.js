@@ -448,6 +448,40 @@ const mergeWithUserValues = (specItems, existingItems) => {
 };
 
 /**
+ * Reconcile the converter-produced "Default" example with the existing item's
+ * examples on sync. The Default example mirrors the spec's request body, so a
+ * stale copy would let "Load Example into Request" restore the pre-sync body.
+ *
+ * - Replaces an existing Default in place (preserving its uid so editor
+ *   selection / scroll position survives the sync), updating itemUid to the
+ *   existing item.
+ * - Appends a new Default when one doesn't exist yet.
+ * - Leaves all other (user-renamed or per-response) examples untouched.
+ * - If the new spec produces no Default (operation lost its request body),
+ *   the existing Default is left alone rather than deleted, to avoid
+ *   silently dropping a body the user may still rely on.
+ */
+const reconcileDefaultExample = (existingExamples, specExamples, existingItemUid) => {
+  const specDefault = (specExamples || []).find((e) => e?.name === 'Default');
+  if (!specDefault) return existingExamples;
+
+  const existing = existingExamples || [];
+  const existingDefaultIdx = existing.findIndex((e) => e?.name === 'Default');
+
+  if (existingDefaultIdx === -1) {
+    return [...existing, { ...specDefault, itemUid: existingItemUid }];
+  }
+
+  const reconciled = [...existing];
+  reconciled[existingDefaultIdx] = {
+    ...specDefault,
+    uid: existing[existingDefaultIdx].uid,
+    itemUid: existingItemUid
+  };
+  return reconciled;
+};
+
+/**
  * Merge a spec item into an existing request, preserving collection-specific data
  * (tests, scripts, assertions) and user values for matching params/headers.
  *
@@ -457,6 +491,11 @@ const mergeWithUserValues = (specItems, existingItems) => {
 const mergeSpecIntoRequest = (existingRequest, specItem, { fullReset = false } = {}) => {
   const mergedParams = mergeWithUserValues(specItem.request.params, existingRequest.request?.params);
   const mergedHeaders = mergeWithUserValues(specItem.request.headers, existingRequest.request?.headers);
+  const mergedExamples = reconcileDefaultExample(
+    existingRequest.examples,
+    specItem.examples,
+    existingRequest.uid
+  );
 
   if (fullReset) {
     return {
@@ -470,7 +509,8 @@ const mergeSpecIntoRequest = (existingRequest, specItem, { fullReset = false } =
         docs: specItem.request.docs,
         params: mergedParams || [],
         headers: mergedHeaders || []
-      }
+      },
+      ...(mergedExamples ? { examples: mergedExamples } : {})
     };
   }
 
@@ -483,7 +523,8 @@ const mergeSpecIntoRequest = (existingRequest, specItem, { fullReset = false } =
       auth: specItem.request.auth,
       params: mergedParams || existingRequest.request?.params || [],
       headers: mergedHeaders || existingRequest.request?.headers || []
-    }
+    },
+    ...(mergedExamples ? { examples: mergedExamples } : {})
   };
 };
 
@@ -1696,3 +1737,5 @@ const registerOpenAPISyncIpc = (mainWindow) => {
 module.exports = registerOpenAPISyncIpc;
 module.exports.saveSpecAndUpdateMetadata = saveSpecAndUpdateMetadata;
 module.exports.cleanupSpecFilesForCollection = cleanupSpecFilesForCollection;
+module.exports.mergeSpecIntoRequest = mergeSpecIntoRequest;
+module.exports.reconcileDefaultExample = reconcileDefaultExample;
