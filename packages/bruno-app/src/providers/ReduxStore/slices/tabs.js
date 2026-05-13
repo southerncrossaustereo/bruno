@@ -2,6 +2,7 @@ import { createSlice } from '@reduxjs/toolkit';
 import filter from 'lodash/filter';
 import find from 'lodash/find';
 import last from 'lodash/last';
+import { isActiveTab as checkIsActiveTab, deserializeTab } from 'utils/snapshot';
 
 // todo: errors should be tracked in each slice and displayed as toasts
 
@@ -17,12 +18,34 @@ const tabTypeAlreadyExists = (tabs, collectionUid, type) => {
   return find(tabs, (tab) => tab.collectionUid === collectionUid && tab.type === type);
 };
 
+const findTabByPathname = (tabs, { collectionUid, pathname, type, exampleName }) => {
+  if (!pathname || !collectionUid || !type) {
+    return null;
+  }
+
+  return find(tabs, (tab) => {
+    if (tab.collectionUid !== collectionUid) {
+      return false;
+    }
+
+    if (tab.pathname !== pathname || tab.type !== type) {
+      return false;
+    }
+
+    if (type === 'response-example') {
+      return tab.exampleName === exampleName;
+    }
+
+    return true;
+  });
+};
+
 export const tabsSlice = createSlice({
   name: 'tabs',
   initialState,
   reducers: {
     addTab: (state, action) => {
-      const { uid, collectionUid, type, requestPaneTab, preview, exampleUid, itemUid, isTransient } = action.payload;
+      const { uid, collectionUid, type, requestPaneTab, preview, exampleUid, itemUid, pathname, exampleName, isTransient } = action.payload;
 
       const nonReplaceableTabTypes = [
         'variables',
@@ -39,6 +62,12 @@ export const tabsSlice = createSlice({
       const existingTab = find(state.tabs, (tab) => tab.uid === uid);
       if (existingTab) {
         state.activeTabUid = existingTab.uid;
+        return;
+      }
+
+      const existingPathnameTab = findTabByPathname(state.tabs, { collectionUid, pathname, type, exampleName });
+      if (existingPathnameTab) {
+        state.activeTabUid = existingPathnameTab.uid;
         return;
       }
 
@@ -59,10 +88,12 @@ export const tabsSlice = createSlice({
       }
 
       const lastTab = state.tabs[state.tabs.length - 1];
-      if (state.tabs.length > 0 && lastTab.preview) {
+      if (state.tabs.length > 0 && lastTab.preview && lastTab.collectionUid === collectionUid) {
         state.tabs[state.tabs.length - 1] = {
           uid,
           collectionUid,
+          type: type || 'request',
+          pathname: pathname || null,
           requestPaneWidth: null,
           requestPaneHeight: null,
           requestPaneCollapsed: false,
@@ -74,13 +105,13 @@ export const tabsSlice = createSlice({
           responseFormat: null,
           responseViewTab: null,
           scriptPaneTab: null,
-          type: type || 'request',
           preview: preview !== undefined
             ? preview
             : !nonReplaceableTabTypes.includes(type),
           ...(uid ? { folderUid: uid } : {}),
           ...(exampleUid ? { exampleUid } : {}),
           ...(itemUid ? { itemUid } : {}),
+          ...(exampleName ? { exampleName } : {}),
           ...(isTransient ? { isTransient: true } : {})
         };
 
@@ -91,6 +122,8 @@ export const tabsSlice = createSlice({
       state.tabs.push({
         uid,
         collectionUid,
+        type: type || 'request',
+        pathname: pathname || null,
         requestPaneWidth: null,
         requestPaneHeight: null,
         requestPaneCollapsed: false,
@@ -107,13 +140,13 @@ export const tabsSlice = createSlice({
         tableColumnWidths: {},
         scriptPaneTab: null,
         docsEditing: false,
-        type: type || 'request',
         ...(uid ? { folderUid: uid } : {}),
         preview: preview !== undefined
           ? preview
           : !nonReplaceableTabTypes.includes(type),
         ...(exampleUid ? { exampleUid } : {}),
         ...(itemUid ? { itemUid } : {}),
+        ...(exampleName ? { exampleName } : {}),
         ...(isTransient ? { isTransient: true } : {})
       });
       state.activeTabUid = uid;
@@ -157,6 +190,13 @@ export const tabsSlice = createSlice({
 
       if (tab) {
         tab.requestPaneHeight = action.payload.requestPaneHeight;
+      }
+    },
+    updateApiSpecTabLeftPaneWidth: (state, action) => {
+      const tab = find(state.tabs, (t) => t.uid === action.payload.uid);
+
+      if (tab) {
+        tab.apiSpecLeftPaneWidth = action.payload.apiSpecLeftPaneWidth;
       }
     },
     updateRequestPaneTab: (state, action) => {
@@ -389,6 +429,43 @@ export const tabsSlice = createSlice({
 
       state.tabs = tabs;
     },
+    syncTabUid: (state, action) => {
+      const { oldUid, newUid } = action.payload;
+      const tab = find(state.tabs, (t) => t.uid === oldUid);
+      if (tab) {
+        tab.uid = newUid;
+        if (state.activeTabUid === oldUid) {
+          state.activeTabUid = newUid;
+        }
+      }
+    },
+    restoreTabs: (state, action) => {
+      const { collection, tabs: snapshotTabs, activeTab } = action.payload;
+      const collectionUid = collection.uid;
+
+      const activeTabWasInCollection = state.tabs.some(
+        (t) => t.uid === state.activeTabUid && t.collectionUid === collectionUid
+      );
+
+      state.tabs = state.tabs.filter((t) => t.collectionUid !== collectionUid);
+
+      if (activeTabWasInCollection) {
+        state.activeTabUid = null;
+      }
+
+      (snapshotTabs || []).forEach((snapshotTab) => {
+        const tab = deserializeTab(snapshotTab, collection);
+        state.tabs.push(tab);
+
+        if (checkIsActiveTab(tab, activeTab, collection)) {
+          state.activeTabUid = tab.uid;
+        }
+      });
+
+      if (!state.activeTabUid) {
+        state.activeTabUid = state.tabs.find((t) => t.collectionUid === collectionUid)?.uid || null;
+      }
+    },
     reopenLastClosedTab: (state, action) => {
       const collectionUid = action.payload?.collectionUid;
       // Find the last closed tab for this collection (LIFO). If no collectionUid is
@@ -416,6 +493,7 @@ export const {
   switchTab,
   updateRequestPaneTabWidth,
   updateRequestPaneTabHeight,
+  updateApiSpecTabLeftPaneWidth,
   updateRequestPaneTab,
   updateResponsePaneTab,
   updateResponseFormat,
@@ -434,6 +512,8 @@ export const {
   expandRequestPane,
   expandResponsePane,
   reorderTabs,
+  syncTabUid,
+  restoreTabs,
   reopenLastClosedTab,
   updateQueryBuilderOpen,
   updateQueryBuilderWidth,
