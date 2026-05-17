@@ -3,7 +3,8 @@ const {
   testReference,
   testVaultAccess,
   listSecretsInVault,
-  listSecretVersions
+  listSecretVersions,
+  signInToAzure
 } = require('@usebruno/secret-providers');
 const { getBrunoConfig } = require('../store/bruno-config');
 
@@ -16,6 +17,7 @@ const { getBrunoConfig } = require('../store/bruno-config');
 // renderer:list-keyvault-stores      — read configured stores from brunoConfig
 // renderer:list-keyvault-secrets     — list secret names in a store
 // renderer:list-keyvault-secret-versions — list versions of a single secret
+// renderer:signin-keyvault-store     — explicit interactive sign-in (bypasses chain)
 
 // Looks up a store from bruno.json's secretProviders.azureKeyVault.stores
 // by id. Falls back to treating the supplied identifier as a literal vault
@@ -69,6 +71,14 @@ const registerAzureKeyVaultIpc = () => {
     const resolved = store || resolveStoreFromConfig(brunoConfig, storeIdOrVault);
     if (!resolved) return { ok: false, errorCode: 'CONFIG', message: 'Store not configured.' };
     return await listSecretsInVault(resolved, { brunoConfig, mode: 'desktop', limit, search, scanLimit });
+  });
+
+  ipcMain.handle('renderer:signin-keyvault-store', async (_event, payload = {}) => {
+    const { storeIdOrVault, store, collectionUid, collection } = payload;
+    const brunoConfig = getBrunoConfig(collectionUid, collection);
+    const resolved = store || resolveStoreFromConfig(brunoConfig, storeIdOrVault);
+    if (!resolved) return { ok: false, errorName: 'Config', message: 'Store not configured.' };
+    return await signInToAzure(resolved, { brunoConfig, mode: 'desktop' });
   });
 
   ipcMain.handle('renderer:list-keyvault-secret-versions', async (_event, payload = {}) => {

@@ -11,6 +11,29 @@
 // VisualStudioCodeCredential fails fast if no VS Code session. The chain
 // transparently tries the next.
 
+// Pool of InteractiveBrowserCredential instances keyed by (tenantId, clientId).
+// We MUST share these between the chain (used during resolution) and the
+// explicit "Sign in to Azure" flow — they each have their own MSAL in-memory
+// token cache, so different instances mean a successful sign-in won't satisfy
+// later silent calls and the user gets prompted again.
+const interactivePool = new Map();
+const interactiveKey = (tenantId, clientId) => `${tenantId || ''}|${clientId || ''}`;
+
+const getInteractiveCredential = ({ tenantId, clientId } = {}) => {
+  const key = interactiveKey(tenantId, clientId);
+  if (!interactivePool.has(key)) {
+    const { InteractiveBrowserCredential } = require('@azure/identity');
+    interactivePool.set(key, new InteractiveBrowserCredential({
+      tenantId,
+      clientId,
+      redirectUri: 'http://localhost'
+    }));
+  }
+  return interactivePool.get(key);
+};
+
+const clearInteractivePool = () => interactivePool.clear();
+
 const buildCredential = ({ mode = 'desktop', tenantId, clientId, auth = {} } = {}) => {
   // Lazy require so this module can be unit-tested without installing
   // @azure/identity (the resolver mocks it).
@@ -22,7 +45,6 @@ const buildCredential = ({ mode = 'desktop', tenantId, clientId, auth = {} } = {
     AzurePowerShellCredential,
     VisualStudioCodeCredential,
     ManagedIdentityCredential,
-    InteractiveBrowserCredential,
     DeviceCodeCredential
   } = identity;
 
@@ -59,11 +81,7 @@ const buildCredential = ({ mode = 'desktop', tenantId, clientId, auth = {} } = {
 
   // 6. Final fallback — must prompt the human
   if (mode === 'desktop' && auth.allowInteractive !== false) {
-    links.push(new InteractiveBrowserCredential({
-      tenantId,
-      clientId,
-      redirectUri: 'http://localhost'
-    }));
+    links.push(getInteractiveCredential({ tenantId, clientId }));
   } else if (mode === 'cli' && auth.allowDeviceCode !== false) {
     links.push(new DeviceCodeCredential({
       tenantId,
@@ -83,4 +101,4 @@ const buildCredential = ({ mode = 'desktop', tenantId, clientId, auth = {} } = {
   return new ChainedTokenCredential(...links);
 };
 
-module.exports = { buildCredential };
+module.exports = { buildCredential, getInteractiveCredential, clearInteractivePool };

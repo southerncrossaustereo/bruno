@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { get } from 'lodash';
 import toast from 'react-hot-toast';
-import { IconCheck, IconAlertCircle, IconTrash, IconPlus, IconEdit, IconX } from '@tabler/icons';
+import { IconCheck, IconAlertCircle, IconTrash, IconPlus, IconEdit, IconX, IconKey } from '@tabler/icons';
 import { updateCollectionSecretProviders } from 'providers/ReduxStore/slices/collections';
 import { saveCollectionSettings } from 'providers/ReduxStore/slices/collections/actions';
 import Button from 'ui/Button';
@@ -29,6 +29,7 @@ const SecretStores = ({ collection }) => {
   const [editingId, setEditingId] = useState(null);
   const [editDraft, setEditDraft] = useState(blankStore());
   const [testStatus, setTestStatus] = useState({}); // { [storeId]: { state: 'idle'|'testing'|'ok'|'error', error?: {} } }
+  const [signInStatus, setSignInStatus] = useState({}); // { [storeId]: { state: 'idle'|'signing'|'ok'|'error', error?: {} } }
 
   const persist = (nextAzkv) => {
     const next = {
@@ -102,6 +103,10 @@ const SecretStores = ({ collection }) => {
       const { [id]: _, ...rest } = prev;
       return rest;
     });
+    setSignInStatus((prev) => {
+      const { [id]: _, ...rest } = prev;
+      return rest;
+    });
   };
 
   // ── Test connection ───────────────────────────────────────────────────────
@@ -121,6 +126,44 @@ const SecretStores = ({ collection }) => {
     } catch (err) {
       setTestStatus((prev) => ({ ...prev, [store.id]: { state: 'error', error: { errorCode: 'IPC', message: err?.message } } }));
     }
+  };
+
+  // ── Sign in (explicit interactive auth) ───────────────────────────────────
+  // Bypasses the chain and triggers the browser prompt directly. We surface
+  // the raw MSAL error here — not the "Try az login" friendly mapping —
+  // because users land on this button precisely when az isn't installed.
+  const signInStore = async (store) => {
+    setSignInStatus((prev) => ({ ...prev, [store.id]: { state: 'signing' } }));
+    try {
+      const result = await window.ipcRenderer.invoke('renderer:signin-keyvault-store', {
+        store,
+        collectionUid: collection.uid,
+        collection
+      });
+      if (result?.ok) {
+        setSignInStatus((prev) => ({ ...prev, [store.id]: { state: 'ok' } }));
+        toast.success(`Signed in to Azure for "${store.displayName || store.id}"`);
+      } else {
+        setSignInStatus((prev) => ({ ...prev, [store.id]: { state: 'error', error: result } }));
+        toast.error(result?.message || 'Sign-in failed', { duration: 8000 });
+      }
+    } catch (err) {
+      const error = { errorName: 'IPC', message: err?.message };
+      setSignInStatus((prev) => ({ ...prev, [store.id]: { state: 'error', error } }));
+      toast.error(err?.message || 'Sign-in failed', { duration: 8000 });
+    }
+  };
+
+  const renderSignInResult = (id) => {
+    const s = signInStatus[id];
+    if (!s || s.state === 'idle') return null;
+    if (s.state === 'signing') return <span className="test-result"><span className="test-spinner" /> opening browser…</span>;
+    if (s.state === 'ok') return <span className="test-result test-result-ok"><IconCheck size={13} strokeWidth={2.5} /> signed in</span>;
+    return (
+      <span className="test-result test-result-error" title={s.error?.message || ''}>
+        <IconAlertCircle size={13} strokeWidth={2} /> {s.error?.errorName || 'sign-in failed'}
+      </span>
+    );
   };
 
   const renderTestResult = (id) => {
@@ -220,7 +263,17 @@ const SecretStores = ({ collection }) => {
                   </div>
                 </div>
                 <div className="store-actions">
+                  {renderSignInResult(store.id)}
                   {renderTestResult(store.id)}
+                  <button
+                    type="button"
+                    className="store-action-btn"
+                    onClick={() => signInStore(store)}
+                    disabled={signInStatus[store.id]?.state === 'signing'}
+                    title="Open browser to sign in to Azure (use when `az login` isn't available)"
+                  >
+                    <IconKey size={13} strokeWidth={2} /> Sign in
+                  </button>
                   <button type="button" className="store-action-btn" onClick={() => testStore(store)}>Test</button>
                   <button type="button" className="store-action-btn" onClick={() => startEdit(store)}>
                     <IconEdit size={13} strokeWidth={2} /> Edit

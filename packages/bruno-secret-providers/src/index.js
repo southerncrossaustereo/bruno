@@ -2,6 +2,12 @@ const { findReferences, replaceReferences, buildVaultUrl } = require('./referenc
 const { walkStrings } = require('./walk');
 const AzureKeyVaultProvider = require('./providers/azure-keyvault');
 const { ERROR_CODES, FRIENDLY_MESSAGES, classifyError } = require('./error-classifier');
+const { getInteractiveCredential } = require('./auth/azure-credential');
+
+// Scope used to prime the MSAL token cache during explicit sign-in. Key Vault
+// data-plane uses this resource; tokens cached here will satisfy later
+// getSecret / listSecrets calls without re-prompting.
+const KEYVAULT_SCOPE = 'https://vault.azure.net/.default';
 
 // One provider instance per resolved (mode, tenantId, clientId, vaultBaseUrlTemplate) tuple.
 const providerPool = new Map();
@@ -202,12 +208,51 @@ const clearProviderPool = () => {
   providerPool.clear();
 };
 
+// Triggers an interactive browser sign-in immediately, bypassing the rest of
+// the chain (which is the point of an explicit "Sign in" UI action — the
+// chained credential's silent fallbacks hide *which* step failed and why).
+//
+// The InteractiveBrowserCredential instance used here is shared with the
+// chain via [`getInteractiveCredential`](./auth/azure-credential.js), so a
+// successful sign-in populates the MSAL in-memory token cache that later
+// resolve / testVaultAccess / listSecretsInVault calls use silently.
+//
+// Returns either { ok: true, expiresOnTimestamp } or
+// { ok: false, errorName, message, code } — passing the raw MSAL error
+// through, not the friendly `classifyError` mapping. The UI surfaces this
+// verbatim so the user sees the real reason (port in use, AAD app config,
+// conditional-access policy, etc.) instead of "Try `az login`".
+const signInToAzure = async (storeOrVault, options = {}) => {
+  const resolved = resolveStore(storeOrVault, options);
+  if (resolved.error) return resolved.error;
+  const { cfg } = resolved;
+  const credential = getInteractiveCredential({
+    tenantId: cfg.tenantId,
+    clientId: cfg.clientId
+  });
+  try {
+    const token = await credential.getToken(KEYVAULT_SCOPE);
+    return {
+      ok: true,
+      expiresOnTimestamp: token?.expiresOnTimestamp || null
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      errorName: err?.name || 'Error',
+      message: err?.message || String(err),
+      code: err?.code
+    };
+  }
+};
+
 module.exports = {
   resolveExternalSecrets,
   testReference,
   testVaultAccess,
   listSecretsInVault,
   listSecretVersions,
+  signInToAzure,
   readAzureKeyVaultConfig,
   getAzureKeyVaultProvider,
   resolveStore,
