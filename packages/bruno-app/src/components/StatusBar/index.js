@@ -9,6 +9,7 @@ import Cookies from 'components/Cookies';
 import Notifications from 'components/Notifications';
 import Portal from 'components/Portal';
 import ThemeDropdown from './ThemeDropdown';
+import GitSync from './GitSync';
 import { openConsole } from 'providers/ReduxStore/slices/logs';
 import { addTab } from 'providers/ReduxStore/slices/tabs';
 import { useApp } from 'providers/App';
@@ -116,6 +117,8 @@ const StatusBar = () => {
                 <IconBrandGithub size={16} strokeWidth={1.5} aria-hidden="true" />
               </button>
             </ToolHint>
+
+            <GitSync />
           </div>
         </div>
 

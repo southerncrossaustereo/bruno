@@ -1760,6 +1760,152 @@ const getGitGraph = async (gitRootPath, branchName, limit = 50) => {
   }
 };
 
+// One-shot "is this path a git repo?" probe for the StatusBar's Git Sync
+// button. Returns the resolved root path + current branch so the button can
+// label itself, or { isRepo: false } when the path isn't inside any repo.
+const probeGitPath = async (somePath) => {
+  if (!somePath || typeof somePath !== 'string') return { isRepo: false };
+  if (!fs.existsSync(somePath)) return { isRepo: false };
+  const gitRootPath = findGitRootPath(somePath);
+  if (!gitRootPath) return { isRepo: false };
+  try {
+    const git = getSimpleGitInstanceForPath(gitRootPath);
+    const branch = (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+    return { isRepo: true, gitRootPath, branch };
+  } catch (_err) {
+    return { isRepo: false };
+  }
+};
+
+// One-button "pull then push" for the StatusBar. Deliberately conservative:
+//
+//  - refuses to run when the working tree has uncommitted/untracked changes
+//    (don't quietly hide the user's edits behind a sync) — unless the caller
+//    passes `discardLocalChanges: true`, which the renderer only sets after
+//    explicitly prompting the user
+//  - pulls with --ff-only so we never auto-merge — if the user's branch has
+//    diverged from upstream the result code is `requires-manual-merge` and
+//    they're told to resolve in their own tool
+//  - only pushes if the local branch already tracks a remote — we don't
+//    invent an upstream
+//
+// Returns one of:
+//   { ok: true,  code: 'up-to-date'    }
+//   { ok: true,  code: 'pulled'        , pulled,   discarded? }
+//   { ok: true,  code: 'pushed'        , pushed,   discarded? }
+//   { ok: true,  code: 'synced'        , pulled, pushed, discarded? }
+//   { ok: false, code: 'not-a-repo' | 'no-remote' | 'no-upstream'
+//                    | 'dirty-working-tree' | 'requires-manual-merge'
+//                    | 'error', message, detail? }
+const quickGitSync = async (somePath, options = {}) => {
+  const { discardLocalChanges = false } = options;
+  const probe = await probeGitPath(somePath);
+  if (!probe.isRepo) return { ok: false, code: 'not-a-repo', message: 'Path is not inside a git repository.' };
+  const { gitRootPath, branch } = probe;
+  const git = getSimpleGitInstanceForPath(gitRootPath);
+
+  let discarded = false;
+  try {
+    // Working tree must be clean — both staged and unstaged matter, and so do
+    // untracked files. simple-git's status.isClean() covers all of these.
+    const status = await git.status();
+    if (!status.isClean()) {
+      if (!discardLocalChanges) {
+        return {
+          ok: false,
+          code: 'dirty-working-tree',
+          message: 'You have uncommitted changes. Commit or stash before syncing.',
+          // Surface what would be lost so the renderer can show it in the
+          // confirm prompt before the user opts into discarding.
+          dirty: {
+            modified: status.modified.length,
+            not_added: status.not_added.length,
+            deleted: status.deleted.length,
+            staged: status.staged.length,
+            files: status.files.map((f) => f.path).slice(0, 20)
+          }
+        };
+      }
+      // Caller has explicitly opted in. Wipe both tracked changes (reset
+      // --hard) and untracked files/dirs (clean -fd) — incoming changes can
+      // then land cleanly. Order matters: reset first, then clean, so the
+      // index is consistent if clean fails.
+      await git.raw(['reset', '--hard', 'HEAD']);
+      await git.raw(['clean', '-fd']);
+      discarded = true;
+    }
+
+    // Need a remote to do anything.
+    const remotes = await git.getRemotes(true);
+    if (!remotes || remotes.length === 0) {
+      return { ok: false, code: 'no-remote', message: 'No remote configured for this repository.' };
+    }
+
+    // Need an upstream — we won't guess what to push to.
+    let upstream;
+    try {
+      upstream = (await git.revparse(['--abbrev-ref', '--symbolic-full-name', '@{upstream}'])).trim();
+    } catch (_e) {
+      return {
+        ok: false,
+        code: 'no-upstream',
+        message: `Branch "${branch}" isn't tracking any remote branch. Set an upstream first (e.g. \`git push -u origin ${branch}\`).`
+      };
+    }
+    const [remoteName, ...rest] = upstream.split('/');
+    const remoteBranch = rest.join('/');
+
+    // Fetch so ahead/behind reflects the remote's actual state.
+    await git.fetch(remoteName, remoteBranch);
+
+    const counts = await getAheadBehindCount(gitRootPath);
+    let pulled = 0;
+    let pushed = 0;
+
+    if (counts.behind > 0) {
+      try {
+        await git.pull(remoteName, remoteBranch, ['--ff-only']);
+        pulled = counts.behind;
+      } catch (err) {
+        // ff-only fails when the branch has diverged or a true conflict is
+        // pending — either way the user has to resolve manually.
+        return {
+          ok: false,
+          code: 'requires-manual-merge',
+          message: `Your branch has diverged from ${upstream}. Fast-forward pull isn't possible — resolve the merge manually, then sync again.`,
+          detail: err?.message
+        };
+      }
+    }
+
+    if (counts.ahead > 0) {
+      try {
+        await git.push(remoteName, remoteBranch);
+        pushed = counts.ahead;
+      } catch (err) {
+        return {
+          ok: false,
+          code: 'error',
+          message: `Push to ${upstream} failed: ${err?.message || 'unknown error'}`,
+          detail: err?.message
+        };
+      }
+    }
+
+    if (pulled === 0 && pushed === 0) return { ok: true, code: 'up-to-date', discarded };
+    if (pulled > 0 && pushed === 0) return { ok: true, code: 'pulled', pulled, discarded };
+    if (pulled === 0 && pushed > 0) return { ok: true, code: 'pushed', pushed, discarded };
+    return { ok: true, code: 'synced', pulled, pushed, discarded };
+  } catch (err) {
+    return {
+      ok: false,
+      code: 'error',
+      message: err?.message || 'Sync failed',
+      detail: err?.stack ? String(err.stack).split('\n').slice(0, 4).join('\n') : undefined
+    };
+  }
+};
+
 module.exports = {
   getCollectionGitRootPath,
   getCollectionGitRepoUrl,
@@ -1810,5 +1956,7 @@ module.exports = {
   getFileContentAtCommit,
   getFileContentForVisualDiff,
   getWorkingFileContentForVisualDiff,
-  getStashFileContentForVisualDiff
+  getStashFileContentForVisualDiff,
+  probeGitPath,
+  quickGitSync
 };

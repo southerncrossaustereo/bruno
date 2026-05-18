@@ -70,6 +70,20 @@ const StyledWrapper = styled.div`
     align-items: center;
     padding: 2px 6px;
   }
+
+  .git-sync-spin {
+    animation: bruno-git-sync-spin 0.9s linear infinite;
+  }
+
+  @keyframes bruno-git-sync-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  .status-bar-button[data-trigger="git-sync"]:disabled {
+    cursor: progress;
+    opacity: 0.7;
+  }
 `;
 
 export default StyledWrapper;
